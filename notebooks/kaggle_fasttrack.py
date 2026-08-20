@@ -22,6 +22,14 @@ BRANCH = "main"
 STAGE = "all"          # "setup" | "select" | "calibrate" | "sweep" | "all"
 BUDGET_HOURS = 7.0
 
+# Leave empty to use the Kaggle secret (Add-ons -> Secrets). Kaggle requires a
+# secret to be ATTACHED to each notebook, not merely created -- an unattached
+# secret raises BackendError "No user secrets exist for kernel id ...".
+# If attaching is fighting you, paste the token here instead: this notebook is
+# private, and a deadline beats tidiness. Rotate the token once you have submitted,
+# and never make a notebook containing it public.
+INLINE_GITHUB_TOKEN = ""
+
 # ------------------------------------------------------------------- environment
 import json
 import os
@@ -42,9 +50,34 @@ def elapsed():
     return f"[{(time.time() - T_START) / 60:6.1f} min]"
 
 
-from kaggle_secrets import UserSecretsClient
+def resolve_token() -> str:
+    """Kaggle secret, then inline, then a clear error. The repo is private, so
+    there is no unauthenticated clone to fall back to -- without a token nothing
+    downstream can run, and it is worth saying so plainly rather than failing
+    forty lines later on a git clone."""
+    if INLINE_GITHUB_TOKEN.strip():
+        print("using INLINE_GITHUB_TOKEN")
+        return INLINE_GITHUB_TOKEN.strip()
+    try:
+        from kaggle_secrets import UserSecretsClient
 
-GITHUB_TOKEN = UserSecretsClient().get_secret("GITHUB_TOKEN")
+        tok = UserSecretsClient().get_secret("GITHUB_TOKEN")
+        print("using Kaggle secret GITHUB_TOKEN")
+        return tok
+    except Exception as exc:
+        raise SystemExit(chr(10).join([
+            "",
+            f"No GitHub token available ({type(exc).__name__}).",
+            "The repo is private, so a token is required to clone it.",
+            "",
+            "Fix either way:",
+            "  A) Add-ons -> Secrets -> create GITHUB_TOKEN, then tick the",
+            "     ATTACH checkbox for THIS notebook. Creating it is not enough.",
+            "  B) Set INLINE_GITHUB_TOKEN at the top of this cell and re-run.",
+        ])) from exc
+
+
+GITHUB_TOKEN = resolve_token()
 
 # Pinned. An unpinned install that upgrades peft or transformers midway makes the
 # early runs incomparable with the late ones, and you would not notice until the
@@ -85,7 +118,13 @@ def push(msg):
     sh(["git", "commit", "-m", msg])
     sh(["git", "pull", "--rebase"])
     r = sh(["git", "push"])
-    print("PUSHED" if r.returncode == 0 else "PUSH FAILED -- retry before closing!")
+    if r.returncode == 0:
+        print("PUSHED")
+    else:
+        print("PUSH FAILED. Results are NOT lost yet -- they are in "
+              f"{WORK}/results/. Before closing this session, either fix the push "
+              "or download results/ from the notebook's Output tab. When the "
+              "session ends, /kaggle/working is deleted.")
 
 
 # ------------------------------------------------------------ 1. setup + smoke
