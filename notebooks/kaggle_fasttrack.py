@@ -51,30 +51,35 @@ def elapsed():
 
 
 def resolve_token() -> str:
-    """Kaggle secret, then inline, then a clear error. The repo is private, so
-    there is no unauthenticated clone to fall back to -- without a token nothing
-    downstream can run, and it is worth saying so plainly rather than failing
-    forty lines later on a git clone."""
+    """A token is OPTIONAL now that the repo is public: cloning needs no auth, and
+    only pushing results back does. Missing it must therefore not stop the run --
+    the GPU work is the scarce thing, and results can still be downloaded from the
+    notebook's Output tab if the push never works."""
     if INLINE_GITHUB_TOKEN.strip():
-        print("using INLINE_GITHUB_TOKEN")
+        print("auth: INLINE_GITHUB_TOKEN")
         return INLINE_GITHUB_TOKEN.strip()
     try:
         from kaggle_secrets import UserSecretsClient
 
         tok = UserSecretsClient().get_secret("GITHUB_TOKEN")
-        print("using Kaggle secret GITHUB_TOKEN")
+        print("auth: Kaggle secret GITHUB_TOKEN")
         return tok
     except Exception as exc:
-        raise SystemExit(chr(10).join([
+        print(chr(10).join([
             "",
-            f"No GitHub token available ({type(exc).__name__}).",
-            "The repo is private, so a token is required to clone it.",
+            f"NOTE: no GitHub token ({type(exc).__name__}). Continuing anyway.",
+            "The repo is public, so the clone below works unauthenticated and every",
+            "experiment will run. Only pushing results back needs a token.",
             "",
-            "Fix either way:",
-            "  A) Add-ons -> Secrets -> create GITHUB_TOKEN, then tick the",
-            "     ATTACH checkbox for THIS notebook. Creating it is not enough.",
-            "  B) Set INLINE_GITHUB_TOKEN at the top of this cell and re-run.",
-        ])) from exc
+            "To enable pushing, either:",
+            "  A) Add-ons -> Secrets -> create GITHUB_TOKEN, then tick ATTACH for",
+            "     THIS notebook. Creating the secret is not enough on its own.",
+            "  B) Set INLINE_GITHUB_TOKEN at the top of this cell.",
+            "Without one, download results/ from the Output tab BEFORE closing the",
+            "session -- /kaggle/working is deleted when it ends.",
+            "",
+        ]))
+        return ""
 
 
 GITHUB_TOKEN = resolve_token()
@@ -88,9 +93,12 @@ sh([sys.executable, "-m", "pip", "install", "-q",
     "lm-eval==0.4.5"])
 
 WORK = "/kaggle/working/efficient-genai-research"
+# Unauthenticated clone: the repo is public. Keeping the token out of the remote
+# URL also keeps it out of `git remote -v`, the reflog, and any traceback that
+# prints the command -- which matters more now that the repo is public.
 if not os.path.exists(WORK):
     sh(["git", "clone", "--branch", BRANCH,
-        f"https://{GITHUB_TOKEN}@github.com/{REPO}.git", WORK], check=True)
+        f"https://github.com/{REPO}.git", WORK], check=True)
 else:
     sh(["git", "-C", WORK, "pull", "--rebase"])
 
@@ -106,25 +114,44 @@ print(subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=c
                      capture_output=True, text=True).stdout)
 
 
+def rescue_note():
+    print(f"Results are NOT lost: they are in {WORK}/results/. Before closing "
+          "this session, download results/ from the notebook's Output tab. "
+          "/kaggle/working is deleted when the session ends.")
+
+
 def push(msg):
-    """Push whatever exists now. A result that was not pushed did not happen:
-    /kaggle/working is deleted when the session ends."""
+    """Commit always, push only if a token exists.
+
+    Committing even without a token is deliberate: it timestamps the work in the
+    local history, so a token added mid-session pushes everything accumulated so
+    far rather than only what came after."""
     sh(["git", "add", "results/"])
     status = subprocess.run(["git", "status", "--porcelain"],
                             capture_output=True, text=True).stdout
     if not status.strip():
-        print("nothing new to push")
+        print("nothing new to commit")
         return
     sh(["git", "commit", "-m", msg])
+
+    if not GITHUB_TOKEN:
+        print("COMMITTED LOCALLY -- no token, so not pushed.")
+        rescue_note()
+        return
+
+    # Set the authenticated URL only at push time, so the token never lives in the
+    # stored remote between calls.
+    sh(["git", "remote", "set-url", "origin",
+        f"https://{GITHUB_TOKEN}@github.com/{REPO}.git"])
     sh(["git", "pull", "--rebase"])
     r = sh(["git", "push"])
+    sh(["git", "remote", "set-url", "origin", f"https://github.com/{REPO}.git"])
+
     if r.returncode == 0:
         print("PUSHED")
     else:
-        print("PUSH FAILED. Results are NOT lost yet -- they are in "
-              f"{WORK}/results/. Before closing this session, either fix the push "
-              "or download results/ from the notebook's Output tab. When the "
-              "session ends, /kaggle/working is deleted.")
+        print("PUSH FAILED.")
+        rescue_note()
 
 
 # ------------------------------------------------------------ 1. setup + smoke
