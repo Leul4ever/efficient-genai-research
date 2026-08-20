@@ -16,6 +16,7 @@ from typing import Callable
 import numpy as np
 
 from cost import CostRecord
+from paths import SCORES
 
 REGISTRY: dict[str, Callable[..., "Selector"]] = {}
 
@@ -58,7 +59,12 @@ class ScoreSelector(Selector):
         raise NotImplementedError
 
     def select(self, examples: list[dict], k: int, seed: int) -> tuple[np.ndarray, CostRecord]:
-        scores, cost = self.score(examples)
+        cached = load_cached_scores(self, len(examples))
+        if cached is not None:
+            scores, cost = cached
+        else:
+            scores, cost = self.score(examples)
+            save_cached_scores(self, scores, cost, len(examples))
         if len(scores) != len(examples):
             raise ValueError(f"{self.name}: got {len(scores)} scores for {len(examples)} examples")
         finite = np.isfinite(scores)
@@ -75,3 +81,52 @@ class ScoreSelector(Selector):
 
     def config(self) -> dict:
         return {**super().config(), "direction": self.direction}
+
+
+def _cache_key(selector) -> str:
+    """Identity of a SCORE, which depends on the scorer and its settings but NOT on
+    ratio or seed. Score-based selectors are deterministic: the same scorer over the
+    same pool yields the same numbers every time. Recomputing per (ratio, seed) --
+    six times for the main grid -- is pure waste, and at measured CPU rates it is
+    the difference between 8.5 hours and 51 hours for IFD.
+    """
+    import hashlib
+    import json
+
+    payload = json.dumps(selector.config(), sort_keys=True)
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+
+def load_cached_scores(selector, n_examples: int):
+    """Return (scores, cost) if a matching score file exists, else None."""
+    import json
+
+    path = SCORES / f"{selector.name}__{_cache_key(selector)}.npz"
+    if not path.exists():
+        return None
+    blob = np.load(path, allow_pickle=False)
+    if int(blob["n_examples"]) != n_examples:
+        return None
+    meta = json.loads(path.with_suffix(".json").read_text())
+    cost = CostRecord(**meta["cost"])
+    # Flag the reuse, but keep the ORIGINAL measured cost. Reusing a score across
+    # ratios and seeds is what a practitioner would really do; pretending the
+    # second use was free would understate the method's true price, which is
+    # precisely the accounting error this project exists to criticise.
+    cost.notes = {**cost.notes, "reused_from_cache": True}
+    return blob["scores"], cost
+
+
+def save_cached_scores(selector, scores, cost, n_examples: int) -> None:
+    import json
+
+    SCORES.mkdir(parents=True, exist_ok=True)
+    stem = SCORES / f"{selector.name}__{_cache_key(selector)}"
+    np.savez_compressed(stem.with_suffix(".npz"), scores=scores, n_examples=n_examples)
+    stem.with_suffix(".json").write_text(json.dumps({
+        "method": selector.name,
+        "selector_config": selector.config(),
+        "n_examples": n_examples,
+        "cost": cost.as_dict(),
+    }, indent=2))
+

@@ -75,6 +75,9 @@ python scripts/smoke_test.py                    # 32 checks, no downloads, secon
 python scripts/make_split.py                    # once; then commit results/split.json
 
 # Selection: laptop CPU. Time these -- the numbers are primary results, not footnotes.
+# MEASURED on a laptop CPU: ~300 ms/example, so ~70 min per full pass over 14,000
+# with a 135M scorer. Scores are cached by scorer config, so a method pays that
+# once and every (ratio, seed) after it is instant.
 for m in random perplexity diversity hybrid ifd; do
   python scripts/run_selection.py --method $m --ratio 0.05 --seed 0 1 2
   python scripts/run_selection.py --method $m --ratio 0.10 --seed 0 1 2
@@ -118,6 +121,10 @@ Studies 1 + 2 alone are a complete paper.
   the vector; storing the mean throws away statistical power irreversibly.
 - **Every difference gets a CI.** `analyze.py` prints `INSIDE NOISE` for
   differences whose CI straddles zero, and applies Holm-Bonferroni across the grid.
+- **A score is computed once, not once per condition.** Score-based selectors are
+  deterministic -- `seed` changes nothing -- so `results/scores/` caches by scorer
+  config. Without it the main grid recomputes each score six times, which at
+  measured CPU rates turns 8.5 hours of IFD scoring into 51.
 - **No method is "best" without a budget.** `policy.py` fits an effective data
   multiplier per method and a crossover budget below which the method does not
   repay its own selection cost. Fitted on Study 1, validated on Studies 3 and 4,

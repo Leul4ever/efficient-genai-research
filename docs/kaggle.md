@@ -10,7 +10,7 @@ as a schedule — the headroom only exists if the draw is spread evenly.
 | Stage | Where | Why |
 |---|---|---|
 | Frozen split | laptop, once | `scripts/make_split.py`, committed |
-| Selection (5 of 6 methods) | **laptop CPU** | forward passes only; costs zero GPU quota |
+| Selection (5 of 6 methods) | **laptop CPU** | forward passes only; costs zero GPU quota. MEASURED, not estimated: ~300 ms/example at 196 tok/example, so ~70 min per full pass over 14,000 with a 135M scorer. Scores are cached per scorer config (`results/scores/`), so each method pays this once, not once per (ratio, seed). |
 | Selection (`learning_percentage`) | **Kaggle GPU** | needs a full proxy training epoch |
 | Training + eval | **Kaggle GPU** | 85 runs |
 | Analysis + figures | laptop | reads `results/runs.jsonl` |

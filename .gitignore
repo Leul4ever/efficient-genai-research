@@ -7,3 +7,7 @@ results/runs/*
 !results/runs/.gitkeep
 
 results/figures/*_demo.*
+
+# Cached per-example scores. Large, regenerable, and machine-specific timings live
+# in the accompanying .json -- the SELECTION artifacts are what get committed.
+results/scores/

@@ -16,6 +16,10 @@ SPLIT = RESULTS / "split.json"
 # One file per (method, ratio, seed). Produced on CPU, consumed on GPU. Committed.
 SELECTIONS = RESULTS / "selections"
 
+# Cached per-example scores, keyed by scorer config rather than ratio/seed.
+# Score-based selectors are deterministic, so this is computed once per method.
+SCORES = RESULTS / "scores"
+
 # Append-only run log. One JSON object per training run.
 RUNS = RESULTS / "runs.jsonl"
 
