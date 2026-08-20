@@ -139,10 +139,22 @@ def push(msg):
     sh(["git", "add", "results/"])
     status = subprocess.run(["git", "status", "--porcelain"],
                             capture_output=True, text=True).stdout
-    if not status.strip():
+    if status.strip():
+        sh(["git", "commit", "-m", msg])
+    else:
         print("nothing new to commit")
+
+    # Do NOT return early just because this stage added nothing. Earlier stages may
+    # have committed while no token was available, leaving work stranded locally --
+    # exactly what happens when the secret is attached mid-session. Push whenever
+    # anything at all is ahead of the remote.
+    subprocess.run(["git", "fetch", "-q", "origin"], capture_output=True)
+    ahead = subprocess.run(["git", "rev-list", "--count", f"origin/{BRANCH}..HEAD"],
+                           capture_output=True, text=True).stdout.strip()
+    if ahead in ("", "0"):
+        print("nothing to push -- already in sync with the remote")
         return
-    sh(["git", "commit", "-m", msg])
+    print(f"{ahead} local commit(s) not yet on the remote")
 
     if not GITHUB_TOKEN:
         print("COMMITTED LOCALLY -- no token, so not pushed.")
