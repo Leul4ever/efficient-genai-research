@@ -1,4 +1,15 @@
-"""FAST TRACK -- one Kaggle cell, 24-hour deadline. Paste, set REPO, run.
+"""FAST TRACK -- one Kaggle cell, 24-hour deadline.
+
+HOW TO RUN IT. Do not paste this file into Kaggle. Paste these two lines instead:
+
+    !git clone https://github.com/Leul4ever/efficient-genai-research.git /kaggle/working/efficient-genai-research 2>/dev/null || git -C /kaggle/working/efficient-genai-research pull
+    %run /kaggle/working/efficient-genai-research/notebooks/kaggle_fasttrack.py
+
+The repo is public, so that clone needs no credentials. The reason to bootstrap
+rather than paste: train.py and evaluate.py have never executed anywhere, so
+fixes are likely tonight, and `git pull` picks them up on the next run. Re-pasting
+a 180-line cell at 3am is how a transcription typo eats an hour.
+
 
 Do NOT run the four-week workflow in notebooks/kaggle_cell.py. This file does the
 whole job in one pass and, critically, FAILS EARLY: it proves a single training run
