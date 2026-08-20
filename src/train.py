@@ -57,25 +57,56 @@ def load_selection(cfg: dict) -> tuple[list[int], dict | None, str]:
 
 
 def build_model(cfg: dict):
-    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    """LoRA on an fp16 base by default; 4-bit only if explicitly asked for.
+
+    `load_in_4bit` defaults to FALSE. At the scales this project actually runs,
+    4-bit buys nothing: Qwen2.5-0.5B in fp16 is roughly 1 GB and Qwen2.5-1.5B about
+    3 GB, against 15 GB of T4. It also drags in bitsandbytes, which is the most
+    fragile dependency in the stack -- 0.44.1 imports `triton.ops`, removed in
+    Triton 3.x, and ships no CUDA 12.8 binary, so it fails outright on current
+    Kaggle images.
+
+    Dropping it is also cleaner science. Quantization is a confound: with 4-bit
+    weights, a difference between selection methods is entangled with how each
+    selected subset interacts with quantization error. fp16 removes that.
+
+    Report it as LoRA, not QLoRA. The distinction matters and is cheap to state.
+    """
+    from peft import LoraConfig, get_peft_model
+    from transformers import AutoModelForCausalLM, AutoTokenizer
 
     tok = AutoTokenizer.from_pretrained(cfg["target_model"])
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     tok.padding_side = "right"
 
-    quant = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_use_double_quant=True,
-        # T4 has no bf16; float16 is the only compute dtype available on Kaggle's GPUs.
-        bnb_4bit_compute_dtype=torch.float16,
-    )
-    model = AutoModelForCausalLM.from_pretrained(
-        cfg["target_model"], quantization_config=quant, device_map={"": 0}
-    )
-    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    load_kwargs = {"device_map": {"": 0}, "torch_dtype": torch.float16}
+    if cfg.get("load_in_4bit", False):
+        from transformers import BitsAndBytesConfig
+
+        load_kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+            # T4 has no bf16; float16 is the only compute dtype available here.
+            bnb_4bit_compute_dtype=torch.float16,
+        )
+
+    model = AutoModelForCausalLM.from_pretrained(cfg["target_model"], **load_kwargs)
+
+    if cfg.get("load_in_4bit", False):
+        from peft import prepare_model_for_kbit_training
+
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    else:
+        model.gradient_checkpointing_enable()
+        # Gradient checkpointing needs the inputs to require grad, otherwise the
+        # recomputed graph is detached from the frozen embedding and no LoRA
+        # gradient ever arrives. prepare_model_for_kbit_training does this for the
+        # 4-bit path; on the fp16 path it must be done explicitly.
+        model.enable_input_require_grads()
+        model.config.use_cache = False  # incompatible with checkpointing
+
     model = get_peft_model(model, LoraConfig(
         r=cfg["lora_r"], lora_alpha=cfg["lora_alpha"], lora_dropout=cfg["lora_dropout"],
         bias="none", task_type="CAUSAL_LM",
@@ -83,6 +114,14 @@ def build_model(cfg: dict):
                                ["q_proj", "k_proj", "v_proj", "o_proj",
                                 "gate_proj", "up_proj", "down_proj"]),
     ))
+
+    # Trainable params in fp32. Adam's moments on fp16 parameters underflow at these
+    # learning rates -- and the LR sweep deliberately visits 1e-6, where fp16 updates
+    # would round to zero and silently turn RQ1 into a measurement of nothing.
+    for p in model.parameters():
+        if p.requires_grad:
+            p.data = p.data.float()
+
     return tok, model
 
 

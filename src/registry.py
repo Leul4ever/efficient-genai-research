@@ -25,7 +25,7 @@ from paths import RUNS
 IDENTITY_FIELDS = (
     "study", "target_model", "selection_method", "ratio", "seed",
     "learning_rate", "lora_r", "lora_alpha", "epochs", "max_seq_len",
-    "batch_size", "grad_accum", "template_hash",
+    "batch_size", "grad_accum", "template_hash", "load_in_4bit",
 )
 
 

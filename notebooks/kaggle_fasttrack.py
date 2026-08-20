@@ -95,13 +95,12 @@ def resolve_token() -> str:
 
 GITHUB_TOKEN = resolve_token()
 
-# Pinned. An unpinned install that upgrades peft or transformers midway makes the
-# early runs incomparable with the late ones, and you would not notice until the
-# numbers refuse to line up at 6am.
+# Install as little as possible. The previous pinned set fought Kaggle's image:
+# bitsandbytes 0.44.1 imports `triton.ops` (removed in Triton 3.x) and ships no
+# CUDA 12.8 binary, and pinning transformers dragged the conflict in with it.
+# The fp16 LoRA path needs no bitsandbytes at all, so it is simply not installed.
 sh([sys.executable, "-m", "pip", "install", "-q",
-    "peft==0.13.2", "bitsandbytes==0.44.1", "accelerate==1.0.1",
-    "transformers==4.46.2", "datasets==3.1.0", "sentence-transformers==3.2.1",
-    "lm-eval==0.4.5"])
+    "peft", "sentence-transformers", "lm-eval==0.4.5"])
 
 WORK = "/kaggle/working/efficient-genai-research"
 # Unauthenticated clone: the repo is public. Keeping the token out of the remote

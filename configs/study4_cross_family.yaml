@@ -10,6 +10,7 @@
 target_model: meta-llama/Llama-3.2-1B
 lora_r: 16
 lora_alpha: 32
+load_in_4bit: false   # fp16 LoRA; see train.build_model
 lora_dropout: 0.05
 lora_targets:
 - q_proj
