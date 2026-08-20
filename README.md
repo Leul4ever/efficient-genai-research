@@ -101,7 +101,7 @@ python scripts/figures.py --demo     # synthetic + watermarked, to check layout 
 | `study1_anchors.yaml` | 3 | — | Full-data ceiling. Expensive: ~20× a 5% run. |
 | `study2_lr_sweep.yaml` | 24 | RQ1 | **Run first in Week 3.** Carries the paper. |
 | `study3_scale_transfer.yaml` | 16 | RQ3 | Reuses Study 1's selections unchanged — that is the point. |
-| `study4_cross_family.yaml` | 6 | RQ3 | Exploratory and underpowered **by design**. Label it so. |
+| `study4_cross_family.yaml` | 6 | RQ3/RQ4 | Held-out test of the rule. Underpowered for significance **by design**. |
 
 85 training runs total. Drop Study 4 first if the quota bites, then Study 3;
 Studies 1 + 2 alone are a complete paper.
@@ -118,6 +118,10 @@ Studies 1 + 2 alone are a complete paper.
   the vector; storing the mean throws away statistical power irreversibly.
 - **Every difference gets a CI.** `analyze.py` prints `INSIDE NOISE` for
   differences whose CI straddles zero, and applies Holm-Bonferroni across the grid.
+- **No method is "best" without a budget.** `policy.py` fits an effective data
+  multiplier per method and a crossover budget below which the method does not
+  repay its own selection cost. Fitted on Study 1, validated on Studies 3 and 4,
+  at zero extra GPU cost.
 - **Failures are logged, not dropped.** A run that diverges to `nan` at one
   learning rate and not another is RQ1's signal, not an inconvenience.
 
@@ -140,6 +144,7 @@ src/
   cost.py      FLOP + wall-clock ledger (RQ2's foundation)
   registry.py  content-addressed run IDs, append-only JSONL
   stats.py     paired bootstrap, ranking stability, Pareto, Holm-Bonferroni
+  policy.py    the budget-aware selection rule -- the constructive contribution
   train.py     one condition -> one line in runs.jsonl
   evaluate.py  held-out loss (per example), lm-eval harness, generations
   runner.py    sweep driver: subprocess per run, resumable, shardable

@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from paths import RUN_ARTIFACTS  # noqa: E402
 from registry import load_runs  # noqa: E402
+from policy import choose, crossover_budget, fit_scaling  # noqa: E402
 from stats import (  # noqa: E402
     bootstrap_ci, holm_bonferroni, paired_bootstrap, pareto_frontier, ranking_stability,
 )
@@ -204,6 +205,88 @@ def paired_vs_baseline(runs: list[dict]) -> None:
         print("    NOTHING survives correction. Report this as the headline result.")
 
 
+def rq4_cost_aware_policy(runs: list[dict]) -> None:
+    """The paper's constructive contribution.
+
+    Fits the budget-aware selection rule on the main grid and reports the two
+    numbers it exists to produce: each method's effective data multiplier, and the
+    budget below which that method does not pay for itself.
+    """
+    print()
+    print("=" * 78)
+    print("RQ4 -- the cost-aware selection rule: what should you pick at budget B?")
+    print("=" * 78)
+
+    points, sel_costs, full_train = [], {}, None
+    for r in runs:
+        c, cost = r["config"], r["cost"]
+        loss = r["metrics"].get("held_out_loss")
+        if loss is None or not np.isfinite(loss):
+            continue
+        points.append((c["selection_method"], float(c["ratio"]), float(loss)))
+        sel_costs.setdefault(c["selection_method"], cost["selection_flops"])
+        if c["ratio"] >= 1.0:
+            full_train = cost["training_flops"]
+
+    if not points:
+        print("  no runs yet")
+        return
+
+    if full_train is None:
+        # No full-data anchor logged yet. The cost model is linear in ratio, so a
+        # single run extrapolates it -- but say so, because the extrapolation is an
+        # assumption and not a measurement.
+        anchor = next(r for r in runs if r["metrics"].get("held_out_loss") is not None)
+        full_train = anchor["cost"]["training_flops"] / max(anchor["config"]["ratio"], 1e-9)
+        print("  note: no ratio=1.0 run logged; full-data cost extrapolated linearly")
+
+    try:
+        fit = fit_scaling(points)
+    except ValueError as exc:
+        print(f"  cannot fit yet: {exc}")
+        return
+
+    print()
+    for line in fit.describe().splitlines():
+        print("  " + line)
+
+    worst = max((abs(v) for v in fit.residuals.values()), default=0.0)
+    print()
+    print(f"  largest per-condition residual: {worst:.5f}")
+    print("  Compare that against the spread of the multipliers. If it is the same")
+    print("  size, the shared-exponent assumption failed and the multipliers are not")
+    print("  trustworthy -- report that rather than the multipliers.")
+
+    print()
+    print("  What the rule picks, by budget:")
+    print(f"  {'budget (FLOPs)':>16} {'method':>22} {'ratio':>7} {'pred. loss':>11}")
+    # Start from the CHEAPEST method's reach, not the most expensive one. Starting
+    # high hides the low-budget regime, which is exactly where the rule disagrees
+    # with "just use the best method".
+    floor = min(sel_costs.values()) + full_train * 0.01
+    ceiling = max(sel_costs.values()) + full_train
+    for b in np.logspace(np.log10(floor), np.log10(ceiling), 8):
+        pick = choose(float(b), fit, sel_costs, full_train)
+        if pick:
+            print(f"  {b:>16.3e} {pick.method:>22} {pick.ratio:>7.3f} "
+                  f"{pick.predicted_loss:>11.4f}")
+
+    print()
+    print("  Crossover budgets vs the random baseline")
+    print("  (below this figure, the method does NOT pay for itself):")
+    for m in sorted(sel_costs):
+        if m in ("random", "full"):
+            continue
+        x = crossover_budget("random", m, fit, sel_costs, full_train)
+        if x is None:
+            print(f"    {m:>22}: no crossover -- one option dominates at every budget")
+        else:
+            print(f"    {m:>22}: {x:.3e} FLOPs")
+
+    print()
+    print("  These crossover figures are the quotable result: a selection method is")
+    print("  not 'better' or 'worse' outright, it is better above a stated budget.")
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--study", default=None)
@@ -219,6 +302,7 @@ def main() -> None:
         rq3_transfer([r for r in runs if r["study"] in
                       ("study1_main_grid", "study3_scale_transfer", "study4_cross_family")])
         paired_vs_baseline([r for r in runs if r["study"] == "study1_main_grid"])
+        rq4_cost_aware_policy([r for r in runs if r["study"] == "study1_main_grid"])
         return
 
     runs = ok_runs(args.study)
@@ -227,6 +311,7 @@ def main() -> None:
     rq2_net_cost(runs)
     rq3_transfer(runs)
     paired_vs_baseline(runs)
+    rq4_cost_aware_policy(runs)
 
 
 if __name__ == "__main__":

@@ -57,7 +57,30 @@ run the experiment.
      learning_percentage runs on a GPU while the training-free methods run on CPU.
      All cross-method cost claims use analytical FLOPs. -->
 
-### 3.3 The robustness protocol
+### 3.3 Budget-aware selection (the proposed rule)
+<!-- src/policy.py. This is the paper's constructive contribution -- without it the
+     work is a pure audit and the assignment's "design a novel or improved
+     methodology" requirement goes unmet.
+
+     Quality model, a data-scaling law with one addition:
+         L(m, r) = L_inf + A * (e_m * r)^(-alpha),   e_random := 1
+     e_m is the method's EFFECTIVE DATA MULTIPLIER: "this method's 5% is worth
+     e_m * 5% of randomly chosen data". One interpretable, falsifiable number per
+     method. alpha is shared across methods (a property of the task, and not
+     identifiable per-method from two ratios) -- report the residuals so the reader
+     can judge whether that assumption held.
+
+     Cost model: C(m, r) = C_sel(m) + c_train * r.
+
+     The rule, closed-form because loss is monotone in r:
+         r*(m) = clip((B - C_sel(m)) / c_train, 0, 1)
+         choose argmin_m L(m, r*(m))
+
+     Note the r=1 subtlety: at full data every method selects the identical set, so
+     a ratio-1.0 point carries no information about any method's multiplier and is
+     attributed to the baseline. -->
+
+### 3.4 The robustness protocol
 <!-- Spearman/Kendall between method rankings across LR conditions.
      Borrow the ICLR paper's Spearman > 0.95 "stable" threshold so the two results
      are directly comparable. -->
@@ -101,7 +124,24 @@ run the experiment.
      Study 4 is EXPLORATORY and underpowered by design. Report effect sizes with
      CIs; make no significance claim. Say the word "underpowered" in the text. -->
 
-### 5.4 What fell inside the noise
+### 5.4 RQ4 — the cost-aware rule
+<!-- python scripts/analyze.py --study study1_main_grid   (RQ4 section)
+     Figure 4: results/figures/fig4_budget_policy.pdf
+
+     Two numbers to report:
+       1. the effective data multiplier per method, with the fit's residuals;
+       2. the CROSSOVER BUDGET per method -- below it, the method does not repay
+          its own selection cost. This is the quotable result: a selection method
+          is not better or worse outright, it is better above a stated budget.
+
+     Validation: the rule is fitted on Study 1 (Qwen2.5-0.5B) and PREDICTS for
+     Studies 3 and 4. `policy.policy_regret` compares three policies at each budget
+     -- ORACLE (hindsight), OURS, and STATIC ("always use the method that won the
+     main grid", which is what the literature's fixed-budget framing implies).
+     If the rule cannot beat STATIC, say so; that is a valid and publishable
+     outcome, and it is what the Limitations section is for. -->
+
+### 5.5 What fell inside the noise
 <!-- Do not skip this subsection. Every difference whose CI straddles zero, named.
      analyze.py prints these as INSIDE NOISE; carry the list over verbatim.
      Include the per-method, per-LR divergence (nan) failure rate. -->
@@ -118,7 +158,8 @@ run the experiment.
 
 <!-- State all of these; each is already true and hiding one costs more than it saves:
      one pool (Dolly only); scales <= 1.5B; QLoRA not full fine-tuning; analytical
-     rather than measured FLOPs; single judge model (Qwen2.5-7B), which is a weak
+     rather than measured FLOPs; the scaling law is fitted from only two ratios
+     plus an anchor, and its shared exponent is an assumption; single judge model (Qwen2.5-7B), which is a weak
      judge; held-out Dolly loss rewards Dolly-typical selections; wall-clock not
      comparable across cost classes; Study 4 underpowered. -->
 

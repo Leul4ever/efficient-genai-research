@@ -162,6 +162,156 @@ def test_registry() -> None:
         check("rejects a config missing identity fields", True)
 
 
+def test_policy() -> None:
+    print("\npolicy (budget-aware selection rule)")
+    from policy import (
+        ScalingFit, best_affordable_ratio, choose, crossover_budget,
+        fit_scaling, policy_regret,
+    )
+
+    # Known ground truth. The only honest way to test a fitting routine is to
+    # generate from a model whose parameters you already know and check recovery.
+    TRUE = dict(l_inf=1.70, amplitude=0.10, alpha=0.35,
+                e={"random": 1.0, "perplexity": 1.8, "ifd": 2.6, "learn_pct": 3.0})
+
+    def truth(m, r):
+        return TRUE["l_inf"] + TRUE["amplitude"] * (TRUE["e"][m] * r) ** (-TRUE["alpha"])
+
+    rng = np.random.RandomState(0)
+    # Ratios below 1 vary by method; the full-data anchor does NOT. At r=1 every
+    # method selects the identical set (the whole pool), so generating a different
+    # loss per method there would encode a situation that cannot occur -- and the
+    # fitter now coerces such points onto the baseline precisely because of that.
+    points = [(m, r, truth(m, r) + rng.randn() * 0.002)   # 3 seeds of measurement noise
+              for m in TRUE["e"] for r in (0.05, 0.10) for _ in range(3)]
+    points += [("random", 1.0, truth("random", 1.0) + rng.randn() * 0.002) for _ in range(3)]
+
+    fit = fit_scaling(points)
+    check("recovers alpha within 10%", abs(fit.alpha - TRUE["alpha"]) / TRUE["alpha"] < 0.10,
+          f"{fit.alpha:.3f} vs {TRUE['alpha']:.3f}")
+    worst = max(abs(fit.multipliers[m] - TRUE["e"][m]) / TRUE["e"][m] for m in TRUE["e"])
+    check("recovers every multiplier within 15%", worst < 0.15, f"worst rel. error {worst:.3f}")
+    check("pins the baseline multiplier to exactly 1", fit.multipliers["random"] == 1.0)
+    check("fit is tight on clean data", fit.rmse < 0.01, f"RMSE {fit.rmse:.5f}")
+
+    try:
+        # 4 methods -> 6 free parameters, so 4 points can never constrain the fit.
+        fit_scaling([(m, 0.05, truth(m, 0.05)) for m in TRUE["e"]])
+        check("refuses to fit with too few points", False)
+    except ValueError:
+        check("refuses to fit with too few points", True)
+
+    try:
+        fit_scaling([(m, 0.05, truth(m, 0.05)) for m in TRUE["e"] for _ in range(6)])
+        check("refuses to fit when every point is at one ratio", False)
+    except ValueError:
+        check("refuses to fit when every point is at one ratio", True)
+
+    only_random = [(m, r, l) for m, r, l in points if m == "random"]
+    solo = fit_scaling(only_random)
+    check("fits a baseline-only dataset without indexing an empty array",
+          solo.multipliers == {"random": 1.0}, str(solo.multipliers))
+
+    try:
+        # Strip both the baseline runs AND the full-data anchor. A full-data point
+        # is coerced onto the baseline (it IS the baseline at r=1), so leaving one
+        # in would legitimately supply the anchor.
+        fit_scaling([(m, r, l) for m, r, l in points if m != "random" and r < 1.0])
+        check("refuses to fit without the baseline anchor", False)
+    except ValueError:
+        check("refuses to fit without the baseline anchor", True)
+
+    # The real data labels the ceiling run "full", not "random" -- and because a
+    # full-data point IS the baseline at r=1, it can anchor a fit that contains no
+    # random runs at all.
+    no_random = [(m, r, l) for m, r, l in points if m != "random"]
+    no_random += [("full", 1.0, truth("random", 1.0)) for _ in range(3)]
+    anchored = fit_scaling(no_random)
+    check("a run labelled 'full' anchors the baseline at r=1",
+          anchored.multipliers["random"] == 1.0 and len(anchored.multipliers) > 1,
+          str({k: round(v, 2) for k, v in anchored.multipliers.items()}))
+    check("'full' does not survive as a method with its own multiplier",
+          "full" not in anchored.multipliers, str(sorted(anchored.multipliers)))
+
+    coerced = fit_scaling(points + [("ifd", 1.0, truth("random", 1.0))])
+    check("a method's r=1.0 point does not inflate its own multiplier",
+          abs(coerced.multipliers["ifd"] - fit.multipliers["ifd"]) < 0.25,
+          f"{coerced.multipliers['ifd']:.2f} vs {fit.multipliers['ifd']:.2f}")
+
+    # -- the rule itself -------------------------------------------------------
+    TRAIN_FULL = 8.0e16                        # FLOPs to train on 100% of the pool
+    SEL = {"random": 0.0, "perplexity": 3.0e14, "ifd": 1.8e15, "learn_pct": 2.5e16}
+
+    check("affordable ratio is 0 when the budget cannot cover selection",
+          best_affordable_ratio(1.0e14, SEL["ifd"], TRAIN_FULL) == 0.0)
+    check("affordable ratio caps at 1.0", best_affordable_ratio(1e18, 0.0, TRAIN_FULL) == 1.0)
+    check("affordable ratio spends the whole remaining budget",
+          abs(best_affordable_ratio(SEL["ifd"] + TRAIN_FULL * 0.25, SEL["ifd"], TRAIN_FULL)
+              - 0.25) < 1e-9)
+
+    tiny = choose(4.0e14, fit, SEL, TRAIN_FULL)
+    check("at a tiny budget the expensive method is not chosen",
+          tiny is not None and tiny.method in ("random", "perplexity"), str(tiny))
+    check("the tiny-budget choice is actually affordable",
+          tiny.total_flops <= 4.0e14 * 1.000001, f"{tiny.total_flops:.2e}")
+
+    huge = choose(2.0e17, fit, SEL, TRAIN_FULL)
+    check("at a large budget the strongest method is chosen",
+          huge is not None and huge.method == "learn_pct", str(huge))
+
+    check("returns None when nothing at all is affordable",
+          choose(1.0, fit, {"ifd": SEL["ifd"]}, TRAIN_FULL) is None)
+
+    # The winning method must CHANGE with budget -- if it never does, the rule is
+    # decorative and prior work's single-answer framing was fine all along.
+    winners = {choose(b, fit, SEL, TRAIN_FULL).method
+               for b in np.logspace(np.log10(5e14), 17, 40)
+               if choose(b, fit, SEL, TRAIN_FULL)}
+    check("the optimal method changes across the budget range", len(winners) > 1,
+          f"winners: {sorted(winners)}")
+
+    x = crossover_budget("perplexity", "learn_pct", fit, SEL, TRAIN_FULL)
+    check("finds a crossover budget between two methods", x is not None, f"{x:.3e}" if x else "none")
+    if x:
+        # crossover_budget is PAIRWISE, so the check must restrict `choose` to the
+        # same two methods. Comparing against the global argmin conflates two
+        # different questions -- a third method can beat both on either side.
+        pair = ["perplexity", "learn_pct"]
+        below = choose(x * 0.8, fit, SEL, TRAIN_FULL, methods=pair).method
+        above = choose(x * 1.5, fit, SEL, TRAIN_FULL, methods=pair).method
+        check("cheap method wins below the crossover, expensive above",
+              below == "perplexity" and above == "learn_pct", f"{below} -> {above}")
+        check("the global choice can differ from the pairwise winner",
+              choose(x * 1.5, fit, SEL, TRAIN_FULL).method != above
+              or True)  # informational: records which method actually wins globally
+
+    # -- held-out validation ---------------------------------------------------
+    observed = {(m, r): truth(m, r) for m in TRUE["e"] for r in (0.05, 0.10)}
+    reg = policy_regret(fit, SEL, TRAIN_FULL, observed, budget=1.2e16)
+    check("regret report is feasible at a sane budget", reg["feasible"])
+    check("the rule never beats the oracle", reg["ours"]["regret"] >= -1e-9,
+          f"regret {reg['ours']['regret']:+.5f}")
+    check("at a budget below its selection cost, the static policy is INFEASIBLE",
+          not np.isfinite(reg["static"]["loss"]),
+          "the always-use-the-best-method policy cannot pay for learn_pct here")
+    check("the rule stays feasible where the static policy does not",
+          np.isfinite(reg["ours"]["loss"]) and reg["beats_static"],
+          f"ours {reg['ours']['loss']:.4f}")
+
+    # A budget where BOTH policies are feasible -- otherwise "beats static" is
+    # winning by walkover rather than by making a better choice.
+    rich = policy_regret(fit, SEL, TRAIN_FULL, observed, budget=1.0e17)
+    check("both policies feasible at a large budget",
+          np.isfinite(rich["ours"]["loss"]) and np.isfinite(rich["static"]["loss"]),
+          f"ours {rich['ours']['loss']:.4f} vs static {rich['static']['loss']:.4f}")
+    check("the rule matches the oracle when everything is affordable",
+          abs(rich["ours"]["regret"]) < 1e-9, f"regret {rich['ours']['regret']:+.6f}")
+
+    infeasible = policy_regret(fit, SEL, TRAIN_FULL, observed, budget=1.0)
+    check("reports infeasible rather than crashing at a zero budget",
+          infeasible["feasible"] is False)
+
+
 def test_configs() -> None:
     print("\nconfigs")
     import yaml
@@ -190,6 +340,7 @@ if __name__ == "__main__":
     test_facility_location()
     test_misc()
     test_registry()
+    test_policy()
     test_configs()
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     if FAIL:

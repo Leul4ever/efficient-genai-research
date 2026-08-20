@@ -50,7 +50,10 @@ CLASS_COLOR = {
 # Secondary encoding, so cost class survives greyscale print and CVD.
 CLASS_MARKER = {"free": "o", "training-free": "s", "training-based": "^", "none": "D"}
 
-METHOD_COLOR = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]  # adjacent-validated
+METHOD_COLOR = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]
+# Six slots, validated on the adjacent pairlist for line charts (worst adjacent
+# CVD dE 9.1, normal-vision 19.6). Three sit below 3:1 contrast, which is why
+# every line is directly labelled rather than relying on a legend swatch.
 
 INK, INK_2, MUTED = "#0b0b0b", "#52514e", "#b5b3ab"
 SURFACE = "#fcfcfb"
@@ -236,6 +239,95 @@ def figure3_transfer(series: dict[str, list[tuple[float, float, str]]]) -> None:
     save(fig, "fig3_transfer")
 
 
+# --------------------------------------------------------------------- figure 4
+def figure4_budget_policy(fit, sel_costs: dict, full_train_cost: float) -> None:
+    """RQ4: the cost-aware rule. Which method should you use at budget B?
+
+    One line per method: the best held-out loss it can reach at that budget, after
+    paying its own selection cost. The heavy line is the lower envelope -- the
+    rule's answer -- and where the envelope changes which line it follows is the
+    crossover budget the paper quotes.
+
+    A line STARTS at the budget where its method first becomes affordable. That
+    truncation is the visual argument: an expensive selection method does not exist
+    at all below its own fixed cost, however good its multiplier is.
+    """
+    from policy import best_affordable_ratio
+
+    methods = [m for m in sorted(sel_costs) if m != "full"]
+    lo = max(min(sel_costs.values()), full_train_cost * 1e-3)
+    hi = max(sel_costs.values()) + full_train_cost
+    budgets = np.logspace(np.log10(lo), np.log10(hi), 400)
+
+    curves, envelope, envelope_method = {}, [], []
+    for b in budgets:
+        best, best_m = np.inf, None
+        for m in methods:
+            r = best_affordable_ratio(b, sel_costs[m], full_train_cost)
+            if r <= 0:
+                continue
+            v = fit.predict(m, r)
+            curves.setdefault(m, []).append((b, v))
+            if v < best:
+                best, best_m = v, m
+        envelope.append(best)
+        envelope_method.append(best_m)
+
+    # The near-vertical asymptote where a method first becomes affordable would
+    # otherwise own the whole y-range and flatten the region that matters. Frame
+    # on the envelope instead, and let the asymptotes run off the top.
+    y_lo = min(envelope) - 0.02 * (max(envelope) - min(envelope) + 1e-9)
+    y_hi = envelope[0] * 1.02
+
+    fig, ax = plt.subplots(figsize=(8.0, 4.8))
+
+    for k, m in enumerate(methods):
+        pts = curves.get(m)
+        if not pts:
+            continue
+        xs = [x for x, _ in pts]
+        ys = [y for _, y in pts]
+        color = METHOD_COLOR[k % len(METHOD_COLOR)]
+        ax.plot(xs, ys, color=color, lw=1.8, alpha=0.9, zorder=2)
+
+        # Label where the curve ENTERS the frame, not at the right edge where every
+        # line converges and the labels pile into an unreadable stack.
+        entry = next(((x, y) for x, y in pts if y <= y_hi), None)
+        if entry:
+            # Methods with equal selection cost enter at the same budget and would
+            # print on top of each other. Stagger vertically by slot index.
+            ax.annotate(f" {m}", entry, textcoords="offset points",
+                        xytext=(4, 6 + 11 * (k % 3)),
+                        fontsize=8, color=INK, va="bottom", ha="left", zorder=5)
+
+    ax.plot(budgets, envelope, color=INK, lw=3.2, alpha=1.0, zorder=3,
+            solid_capstyle="round")
+    ax.plot(budgets, envelope, color=SURFACE, lw=1.0, alpha=0.85, zorder=4,
+            ls=(0, (2, 3)))  # dashed core, so the envelope reads over any line
+
+    for i in range(1, len(budgets)):
+        if envelope_method[i] != envelope_method[i - 1]:
+            ax.axvline(budgets[i], color=MUTED, lw=1.0, ls=":", zorder=1)
+            ax.annotate(f"{budgets[i]:.1e}", (budgets[i], y_hi),
+                        textcoords="offset points", xytext=(-3, -3), rotation=90,
+                        fontsize=6.5, color=INK_2, va="top", ha="right", zorder=5)
+
+    ax.set_xscale("log")
+    ax.set_ylim(y_lo, y_hi)
+    ax.set_xlim(budgets[0], budgets[-1] * 1.05)
+    ax.set_xlabel("Total compute budget (FLOPs)")
+    ax.set_ylabel("Best reachable held-out loss")
+    ax.grid(axis="y")
+    ax.set_axisbelow(True)
+
+    handles = [Line2D([], [], color=INK, lw=3.0, label="the rule's choice")]
+    # Lower-right: the crossover tick labels live along the top edge.
+    ax.legend(handles=handles, loc="lower left", frameon=False)
+    fig.suptitle("No method is best outright -- each is best above a stated budget",
+                 x=0.005, ha="left", fontsize=11, color=INK, y=1.0)
+    save(fig, "fig4_budget_policy")
+
+
 # ------------------------------------------------------------------------ data
 def rows_from_runs(runs: list[dict]) -> list[dict]:
     out = []
@@ -282,6 +374,22 @@ def demo_data():
     return rows, by_lr, transfer
 
 
+def demo_policy():
+    """Synthetic fit with the shape H2 predicts: cheap methods own the low-budget
+    end, the training-based method only repays its fixed cost at the top."""
+    from policy import ScalingFit
+
+    fit = ScalingFit(
+        l_inf=1.70, amplitude=0.10, alpha=0.35,
+        multipliers={"random": 1.0, "diversity": 1.4, "perplexity": 1.7,
+                     "ifd": 2.4, "learning_percentage": 2.8},
+        rmse=0.003, n_points=33,
+    )
+    sel_costs = {"random": 0.0, "diversity": 2.0e13, "perplexity": 3.1e14,
+                 "ifd": 1.9e15, "learning_percentage": 2.6e16}
+    return fit, sel_costs, 8.0e16
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--demo", action="store_true",
@@ -304,6 +412,7 @@ def main() -> None:
         figure1_pareto(rows)
         figure2_stability(by_lr)
         figure3_transfer(transfer)
+        figure4_budget_policy(*demo_policy())
         globals()["save"] = _original_save
         return
 
