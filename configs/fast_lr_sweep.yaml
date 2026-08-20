@@ -1,0 +1,50 @@
+# FAST TRACK -- RQ1, the novel core. RUN THIS SECOND, before the anchor.
+# 3 methods x 3 learning rates x 1 seed at 5% = 9 runs, 3 of which the grid
+# already covers at lr=2e-4, so 6 are new.
+#
+# One seed is a real weakness and must be stated: with n=1 per cell the ranking
+# could move through noise alone. Report it as suggestive, and let the paired
+# bootstrap over held-out examples carry what significance there is.
+#
+# Inherits configs/base.yaml; values below are the deliberate overrides.
+
+target_model: Qwen/Qwen2.5-0.5B
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_targets:
+- q_proj
+- k_proj
+- v_proj
+- o_proj
+- gate_proj
+- up_proj
+- down_proj
+learning_rate: 0.0002
+epochs: 3
+batch_size: 4
+grad_accum: 4
+max_seq_len: 512
+warmup_ratio: 0.03
+weight_decay: 0.0
+max_grad_norm: 1.0
+eval_batch_size: 8
+harness_tasks:
+- arc_easy
+harness_limit: 300
+n_judge_prompts: 0
+gen_max_new_tokens: 256
+study: fast_lr_sweep
+grid:
+  selection_method:
+  - random
+  - perplexity
+  - ifd
+  ratio:
+  - 0.05
+  learning_rate:
+  - 1.0e-06
+  - 2.0e-05
+  - 0.0002
+  seed:
+  - 0

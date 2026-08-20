@@ -1,0 +1,50 @@
+# FAST TRACK -- 24-hour scope. Replaces study1_main_grid.
+#
+# 5 methods x 2 ratios x 2 seeds = 20 runs.
+# Dropped vs the full plan: hybrid (a variant, least load-bearing), the third
+# seed, the pairwise judge, and IFEval/HellaSwag.
+# KEPT: learning_percentage. It is the only training-based method, and without
+# it the cost-class contrast that RQ2 and RQ4 rest on collapses entirely.
+#
+# Inherits configs/base.yaml; values below are the deliberate overrides.
+
+target_model: Qwen/Qwen2.5-0.5B
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_targets:
+- q_proj
+- k_proj
+- v_proj
+- o_proj
+- gate_proj
+- up_proj
+- down_proj
+learning_rate: 0.0002
+epochs: 3
+batch_size: 4
+grad_accum: 4
+max_seq_len: 512
+warmup_ratio: 0.03
+weight_decay: 0.0
+max_grad_norm: 1.0
+eval_batch_size: 8
+harness_tasks:
+- arc_easy
+harness_limit: 300
+n_judge_prompts: 0
+gen_max_new_tokens: 256
+study: fast_grid
+grid:
+  selection_method:
+  - random
+  - perplexity
+  - diversity
+  - ifd
+  - learning_percentage
+  ratio:
+  - 0.05
+  - 0.1
+  seed:
+  - 0
+  - 1
