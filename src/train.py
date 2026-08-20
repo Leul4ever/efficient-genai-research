@@ -13,6 +13,7 @@ than one place, neither tells you anything.
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import time
 from pathlib import Path
@@ -56,6 +57,37 @@ def load_selection(cfg: dict) -> tuple[list[int], dict | None, str]:
     return art["local_idx"], art["cost"], art["cost_class"]
 
 
+def disable_bnb_in_peft() -> bool:
+    """Stop peft from importing bitsandbytes when we are not quantizing.
+
+    peft decides via `is_bnb_available()`, which is
+    `importlib.util.find_spec("bitsandbytes") is not None` -- a check that answers
+    "is it installed", NOT "does it import". Kaggle ships a bitsandbytes that is
+    installed and broken: it imports `triton.ops`, removed in Triton 3.x. So the
+    probe says yes, `_create_new_module` does `from .bnb import dispatch_bnb_8bit`,
+    and get_peft_model dies on the fp16 path that never wanted bitsandbytes at all.
+
+    Uninstalling the package fixes it too, but that is a property of the machine and
+    has to be re-done on every fresh session. Overriding the probe is a property of
+    this code, so it holds wherever the code runs. Only ever called when
+    load_in_4bit is false, so nothing that genuinely needs bnb is affected.
+    """
+    patched = []
+    for mod_name in ("peft.import_utils", "peft.tuners.lora.model",
+                     "peft.tuners.lora.__init__", "peft.mapping"):
+        try:
+            mod = importlib.import_module(mod_name)
+        except Exception:
+            continue
+        for fn in ("is_bnb_available", "is_bnb_4bit_available"):
+            if hasattr(mod, fn):
+                setattr(mod, fn, lambda: False)
+                patched.append(f"{mod_name}.{fn}")
+    if patched:
+        print(f"bnb probe disabled in peft ({len(patched)} hooks)")
+    return bool(patched)
+
+
 def build_model(cfg: dict):
     """LoRA on an fp16 base by default; 4-bit only if explicitly asked for.
 
@@ -74,6 +106,11 @@ def build_model(cfg: dict):
     """
     from peft import LoraConfig, get_peft_model
     from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    # After the peft import (its submodules must exist to be patched) and before
+    # get_peft_model (which is where the bnb probe is consulted).
+    if not cfg.get("load_in_4bit", False):
+        disable_bnb_in_peft()
 
     tok = AutoTokenizer.from_pretrained(cfg["target_model"])
     if tok.pad_token is None:
