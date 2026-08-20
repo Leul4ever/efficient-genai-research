@@ -316,6 +316,15 @@ def lazy_greedy_facility_location(sim: np.ndarray, k: int, prior=None) -> np.nda
         return np.arange(n)
     w = np.ones(n, dtype=np.float32) if prior is None else prior.astype(np.float32)
 
+    # Shift similarities to be non-negative before running greedy. Cosine lives in
+    # [-1, 1], and leaving it there breaks the objective: with cur_max initialised
+    # to 0, a candidate from a cluster that is dissimilar to everything selected so
+    # far has sim < 0 < cur_max and scores ZERO marginal gain. Greedy then keeps
+    # drawing from the first cluster it touched -- the exact opposite of diversity,
+    # and a failure that produces plausible-looking output rather than an error.
+    # An affine shift preserves the argmax ordering and keeps f monotone submodular.
+    sim = sim - sim.min()
+
     cur_max = np.zeros(n, dtype=np.float32)
     # Gain of the singleton {j} is sum_i w_i * sim(i, j), since cur_max starts at zero.
     heap = [(-float(np.dot(w, sim[:, j])), j) for j in range(n)]

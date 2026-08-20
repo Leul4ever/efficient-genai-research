@@ -82,7 +82,8 @@ def bootstrap_ci(x: np.ndarray, n_boot: int = DEFAULT_BOOT, seed: int = 0) -> tu
     return float(x.mean()), float(lo), float(hi)
 
 
-def ranking_stability(rankings: dict[str, dict[str, float]], higher_is_better: bool = False) -> dict:
+def ranking_stability(rankings: dict[str, dict[str, float]], higher_is_better: bool = False,
+                      order: list[str] | None = None) -> dict:
     """RQ1's central statistic.
 
     `rankings` maps a condition label (e.g. "lr=1e-4") to {method: score}. Returns
@@ -94,7 +95,18 @@ def ranking_stability(rankings: dict[str, dict[str, float]], higher_is_better: b
     literature reports that they do not. H1 predicts partial collapse here, and this
     function is what tests it.
     """
-    labels = sorted(rankings)
+    # Condition order matters: these labels are read as a sequence (increasing
+    # learning rate, increasing model size). Alphabetical sorting puts "lr=2e-04"
+    # before "lr=2e-05", which silently produces a nonsensical trajectory in any
+    # plot built from this. Callers pass `order` explicitly; the default is only
+    # safe for unordered conditions.
+    if order is not None:
+        missing = set(order) ^ set(rankings)
+        if missing:
+            raise ValueError(f"`order` must list exactly the conditions present; differs by {missing}")
+        labels = list(order)
+    else:
+        labels = sorted(rankings)
     methods = sorted(set.intersection(*(set(rankings[c]) for c in labels)))
     if len(methods) < 3:
         raise ValueError(

@@ -113,6 +113,7 @@ def test_facility_location() -> None:
     # Lazy greedy is exact, so it must agree with the naive implementation.
     def naive(sim, k):
         n = sim.shape[0]
+        sim = sim - sim.min()  # same shift the real implementation applies
         cur, sel = np.zeros(n, dtype=np.float32), []
         for _ in range(k):
             gains = [(np.maximum(sim[:, j] - cur, 0).sum() if j not in sel else -1.0)

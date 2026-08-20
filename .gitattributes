@@ -7,7 +7,7 @@
 # merge=union keeps BOTH sides' lines. That is correct precisely because the file
 # is append-only and line-independent: order carries no meaning, and duplicate
 # run_ids are de-duplicated on read (registry.load_runs).
-results/runs.jsonl merge=union
+results/runs.jsonl merge=union text eol=lf
 
 # Selection artifacts are write-once. A conflict here means two machines produced
 # different selections for the same (method, ratio, seed), which is a real problem

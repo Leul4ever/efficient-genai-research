@@ -46,7 +46,16 @@ def git_sha() -> str:
         return "unknown"
 
 
-def load_runs() -> list[dict]:
+def load_runs(dedupe: bool = True) -> list[dict]:
+    """Read the run log.
+
+    De-duplicates by run_id, keeping the LAST occurrence. This matters because
+    results/runs.jsonl uses git's union merge driver (see .gitattributes): two
+    sharded Kaggle notebooks appending concurrently keep both sides' lines rather
+    than conflicting, which is correct, but a deliberate `--force` re-run then
+    leaves two records for one run_id. Last-wins means the re-run supersedes the
+    record it was meant to replace.
+    """
     if not RUNS.exists():
         return []
     runs = []
@@ -60,6 +69,15 @@ def load_runs() -> list[dict]:
             # A truncated final line is the expected symptom of a killed Kaggle
             # session. Warn and carry on rather than losing the whole log.
             print(f"WARN: results/runs.jsonl line {line_no} is malformed; skipping")
+
+    if dedupe:
+        by_id = {}
+        for r in runs:
+            by_id[r.get("run_id", id(r))] = r
+        n_dupes = len(runs) - len(by_id)
+        if n_dupes:
+            print(f"note: collapsed {n_dupes} duplicate run_id record(s), keeping the latest")
+        runs = list(by_id.values())
     return runs
 
 

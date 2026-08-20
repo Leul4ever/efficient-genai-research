@@ -53,8 +53,15 @@ def main() -> None:
     ap.add_argument("--budget-hours", type=float, default=None,
                     help="stop launching new runs once this much wall-clock is spent. "
                          "Kaggle's GPU quota is weekly and non-bankable, so guard it.")
+    ap.add_argument("--shard", type=int, default=0,
+                    help="which shard this process runs. Kaggle's 'T4 x2' is two "
+                         "separate 16GB GPUs; two sharded processes, one per GPU, "
+                         "roughly halve wall-clock for a sweep of small models.")
+    ap.add_argument("--n-shards", type=int, default=1)
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
+    if not 0 <= args.shard < args.n_shards:
+        ap.error(f"--shard must be in [0, {args.n_shards})")
 
     cfg = yaml.safe_load(args.config.read_text())
     conditions = expand_grid(cfg)
@@ -66,8 +73,18 @@ def main() -> None:
     template_hash = load_split()["template_hash"]
 
     pending = [c for c in conditions if run_id({**c, "template_hash": template_hash}) not in done]
+
+    if args.n_shards > 1:
+        # Shard on the run_id hash, not on list position. Position-based sharding
+        # would reshuffle every time a run completes and the pending list shrinks,
+        # so a resumed session would pick up a different subset than it started with.
+        pending = [c for c in pending
+                   if int(run_id({**c, "template_hash": template_hash}), 16) % args.n_shards
+                   == args.shard]
+
     print(f"{args.config.name}: {len(conditions)} conditions, {len(done)} already logged, "
-          f"{len(pending)} pending")
+          f"{len(pending)} pending"
+          + (f" on shard {args.shard}/{args.n_shards}" if args.n_shards > 1 else ""))
 
     if args.dry_run:
         for c in pending:
