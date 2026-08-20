@@ -2,8 +2,12 @@
 
 HOW TO RUN IT. Do not paste this file into Kaggle. Paste these two lines instead:
 
-    !git clone https://github.com/Leul4ever/efficient-genai-research.git /kaggle/working/efficient-genai-research 2>/dev/null || git -C /kaggle/working/efficient-genai-research pull
+    !git clone https://github.com/Leul4ever/efficient-genai-research.git /kaggle/working/efficient-genai-research 2>/dev/null; git -C /kaggle/working/efficient-genai-research -c pull.rebase=true pull
     %run /kaggle/working/efficient-genai-research/notebooks/kaggle_fasttrack.py
+
+NOTE the `-c pull.rebase=true`. A plain `git pull` aborts once local and upstream
+commits diverge, and %run then silently executes the STALE file already on disk --
+which looks exactly like a fix not working.
 
 The repo is public, so that clone needs no credentials. The reason to bootstrap
 rather than paste: train.py and evaluate.py have never executed anywhere, so
@@ -102,6 +106,13 @@ GITHUB_TOKEN = resolve_token()
 sh([sys.executable, "-m", "pip", "install", "-q",
     "peft", "sentence-transformers", "lm-eval==0.4.5"])
 
+# REMOVE bitsandbytes rather than merely not installing it. peft probes whether it
+# is importable and, finding it present, imports its bnb dispatchers -- so a broken
+# install is worse than none. The copy in the Kaggle image imports `triton.ops`,
+# removed in Triton 3.x, and takes get_peft_model down with it even on the fp16
+# path that never touches quantization. Uninstalling makes peft skip it cleanly.
+sh([sys.executable, "-m", "pip", "uninstall", "-y", "-q", "bitsandbytes"])
+
 WORK = "/kaggle/working/efficient-genai-research"
 # Unauthenticated clone: the repo is public. Keeping the token out of the remote
 # URL also keeps it out of `git remote -v`, the reflog, and any traceback that
@@ -110,7 +121,10 @@ if not os.path.exists(WORK):
     sh(["git", "clone", "--branch", BRANCH,
         f"https://github.com/{REPO}.git", WORK], check=True)
 else:
-    sh(["git", "-C", WORK, "pull", "--rebase"])
+    # -c pull.rebase=true, not --rebase: git refuses to pull at all when branches
+    # have diverged and no strategy is configured, which is exactly the state after
+    # a local results commit meets new upstream commits.
+    sh(["git", "-C", WORK, "-c", "pull.rebase=true", "pull"])
 
 os.chdir(WORK)
 sh(["git", "config", "user.email", "kaggle@runner.local"])
