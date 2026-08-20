@@ -21,7 +21,7 @@ from pathlib import Path
 
 import yaml
 
-from registry import completed_ids, run_id
+from registry import append_run, completed_ids, run_id
 
 
 def expand_grid(cfg: dict) -> list[dict]:
@@ -117,8 +117,6 @@ def main() -> None:
             print(f"  FAILED (exit {result.returncode}) -- continuing")
             failures.append(cond)
             try:
-                from registry import append_run, run_id
-
                 append_run({
                     "run_id": run_id({**cond, "template_hash": template_hash}),
                     "status": "failed",
