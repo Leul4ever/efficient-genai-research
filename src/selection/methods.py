@@ -15,7 +15,7 @@ import torch
 
 from cost import CostRecord, forward_flops, train_flops
 from data import build_full
-from selection.base import ScoreSelector, Selector, register
+from selection.base import ScoreSelector, Selector, register, scores_with_cache
 from selection.scoring import load_scorer, response_nll
 
 
@@ -74,12 +74,18 @@ class IFDSelector(ScoreSelector):
 
     Ratio < 1 means the instruction HELPED, so the example is easy; Cherry-LLM
     discards those. We keep the filter and report how many are dropped.
+
+    SCORER CHOICE: the same 135M model that the perplexity selector uses, so the
+    difference between the two methods is the SIGNAL -- conditional versus
+    unconditional loss -- and nothing else. Scoring IFD with a larger model would
+    confound the signal with scorer capacity, and a win could not be attributed to
+    either. It is also ~4x cheaper on CPU, but that is the smaller reason.
     """
 
     cost_class = "training-free"
     direction = "high"
 
-    def __init__(self, scorer="Qwen/Qwen2.5-0.5B", device="cpu", max_len=512,
+    def __init__(self, scorer="HuggingFaceTB/SmolLM-135M", device="cpu", max_len=512,
                  filter_below_one=True):
         self.scorer, self.device, self.max_len = scorer, device, max_len
         self.filter_below_one = filter_below_one
@@ -195,7 +201,9 @@ class HybridSelector(DiversitySelector):
 
     def select(self, examples, k, seed, prior=None):
         ppl = PerplexitySelector(scorer=self.scorer, device=self.device)
-        scores, ppl_cost = ppl.score(examples)
+        # Through the cache: if plain perplexity already ran with this scorer, its
+        # scores are on disk and this is instant instead of another full pass.
+        scores, ppl_cost = scores_with_cache(ppl, examples)
         # Rank-normalise to [0, 1] so the prior is scale-free and outlier-robust.
         ranks = np.zeros(len(scores), dtype=np.float32)
         order = np.argsort(np.where(np.isfinite(scores), scores, -np.inf), kind="stable")

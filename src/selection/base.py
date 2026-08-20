@@ -59,12 +59,7 @@ class ScoreSelector(Selector):
         raise NotImplementedError
 
     def select(self, examples: list[dict], k: int, seed: int) -> tuple[np.ndarray, CostRecord]:
-        cached = load_cached_scores(self, len(examples))
-        if cached is not None:
-            scores, cost = cached
-        else:
-            scores, cost = self.score(examples)
-            save_cached_scores(self, scores, cost, len(examples))
+        scores, cost = scores_with_cache(self, examples)
         if len(scores) != len(examples):
             raise ValueError(f"{self.name}: got {len(scores)} scores for {len(examples)} examples")
         finite = np.isfinite(scores)
@@ -81,6 +76,20 @@ class ScoreSelector(Selector):
 
     def config(self) -> dict:
         return {**super().config(), "direction": self.direction}
+
+
+def scores_with_cache(selector, examples: list[dict]) -> tuple[np.ndarray, CostRecord]:
+    """Compute a selector's scores, or reuse them if an identical scorer config has
+    already produced them. Used by ScoreSelector.select and by any composite
+    selector that embeds a scorer -- HybridSelector wraps a perplexity scorer, and
+    without going through here it would recompute a 70-minute CPU pass that is
+    already sitting on disk."""
+    cached = load_cached_scores(selector, len(examples))
+    if cached is not None:
+        return cached
+    scores, cost = selector.score(examples)
+    save_cached_scores(selector, scores, cost, len(examples))
+    return scores, cost
 
 
 def _cache_key(selector) -> str:
