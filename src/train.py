@@ -34,7 +34,28 @@ def load_config(path: Path, overrides: list[str]) -> dict:
         key, _, raw = item.partition("=")
         if not _:
             raise ValueError(f"--set expects key=value, got {item!r}")
-        cfg[key] = yaml.safe_load(raw)  # infers int/float/bool/str
+        value = yaml.safe_load(raw)
+
+        # YAML 1.1 only recognises a float in exponent form when it has a decimal
+        # point, so "1e-06" and "2e-05" parse as STRINGS while "0.0002" parses as a
+        # float. Passing a string learning rate to AdamW raises TypeError, the run
+        # dies, and runner.py dutifully continues to the next condition -- which is
+        # how a learning-rate sweep silently collapses to whichever rate happened to
+        # be written with a decimal point.
+        #
+        # Coerce against the type already in the config: it is authoritative about
+        # what this field is meant to be, and it cannot mistake a method name for a
+        # number.
+        if isinstance(value, str) and isinstance(cfg.get(key), (int, float))                 and not isinstance(cfg.get(key), bool):
+            try:
+                value = type(cfg[key])(float(value))
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"--set {key}={raw!r}: config expects a number "
+                    f"({type(cfg[key]).__name__}) but this is not parseable as one"
+                ) from None
+        cfg[key] = value
+
     cfg["template_hash"] = load_split()["template_hash"]
     return cfg
 

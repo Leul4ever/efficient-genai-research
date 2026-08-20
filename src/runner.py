@@ -110,9 +110,24 @@ def main() -> None:
 
         result = subprocess.run(cmd, cwd=Path(__file__).parent.parent)
         if result.returncode != 0:
-            # Keep going. One dead condition should not cost the remaining sweep.
+            # Keep going -- one dead condition should not cost the remaining sweep --
+            # but RECORD it. A failure that only prints to stdout vanishes with the
+            # session, and a sweep that quietly drops two thirds of its conditions
+            # still looks like a completed sweep in results/runs.jsonl.
             print(f"  FAILED (exit {result.returncode}) -- continuing")
             failures.append(cond)
+            try:
+                from registry import append_run, run_id
+
+                append_run({
+                    "run_id": run_id({**cond, "template_hash": template_hash}),
+                    "status": "failed",
+                    "study": cond.get("study", "unknown"),
+                    "config": cond,
+                    "exit_code": result.returncode,
+                })
+            except Exception as exc:  # noqa: BLE001
+                print(f"  (could not log the failure: {exc})")
 
     print(f"\nsweep finished in {(time.perf_counter() - t_start) / 3600:.2f}h, "
           f"{len(failures)} failure(s)")
