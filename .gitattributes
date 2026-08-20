@@ -1,0 +1,17 @@
+# results/runs.jsonl is append-only and written concurrently by two sharded Kaggle
+# notebooks. Without this, two shards appending different runs at EOF produce a
+# rebase conflict on every push -- and the natural "fix" under time pressure is to
+# resolve it by picking one side, which silently discards a completed run and the
+# GPU-hours that produced it.
+#
+# merge=union keeps BOTH sides' lines. That is correct precisely because the file
+# is append-only and line-independent: order carries no meaning, and duplicate
+# run_ids are de-duplicated on read (registry.load_runs).
+results/runs.jsonl merge=union
+
+# Selection artifacts are write-once. A conflict here means two machines produced
+# different selections for the same (method, ratio, seed), which is a real problem
+# that must NOT be auto-resolved -- it means the selection is not reproducible.
+results/selections/*.json -merge
+
+*.npy binary
