@@ -1,0 +1,52 @@
+# Study 1 -- main grid. Establishes the standard result and its error bars.
+# 6 methods x 2 ratios x 3 seeds + full-data ceiling + zero-shot anchor.
+# This is the only study that runs the pairwise judge (n_judge_prompts=200).
+# Week 1 gate: if random @ 5% already matches full-data within CI, say so loudly.
+# That reframes the whole paper and is itself a publishable finding.
+#
+# Inherits configs/base.yaml; values below are the deliberate overrides.
+
+target_model: Qwen/Qwen2.5-0.5B
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_targets:
+- q_proj
+- k_proj
+- v_proj
+- o_proj
+- gate_proj
+- up_proj
+- down_proj
+learning_rate: 0.0002
+epochs: 3
+batch_size: 4
+grad_accum: 4
+max_seq_len: 512
+warmup_ratio: 0.03
+weight_decay: 0.0
+max_grad_norm: 1.0
+eval_batch_size: 8
+harness_tasks:
+- ifeval
+- arc_easy
+- hellaswag
+harness_limit: null
+n_judge_prompts: 200
+gen_max_new_tokens: 256
+study: study1_main_grid
+grid:
+  selection_method:
+  - random
+  - perplexity
+  - diversity
+  - hybrid
+  - ifd
+  - learning_percentage
+  ratio:
+  - 0.05
+  - 0.1
+  seed:
+  - 0
+  - 1
+  - 2

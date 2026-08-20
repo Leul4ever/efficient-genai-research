@@ -1,0 +1,17 @@
+# Laptop (CPU) — selection stage only
+numpy>=1.26
+scipy>=1.11
+pandas>=2.1
+datasets>=2.19
+transformers>=4.44
+sentence-transformers>=3.0
+torch>=2.3
+pyyaml>=6.0
+tqdm>=4.66
+
+# Kaggle (GPU) — training + eval stage. Installed in-notebook, see notebooks/README.md
+# peft>=0.12
+# bitsandbytes>=0.43
+# trl>=0.9
+# accelerate>=0.33
+# lm-eval>=0.4.3

@@ -1,0 +1,33 @@
+# Frozen adaptation settings. Identical across EVERY condition in every study.
+# A study may override exactly one axis (Study 2 overrides learning_rate, Study 3
+# and 4 override target_model). Anything else changing between conditions makes
+# the comparison uninterpretable.
+#
+# Freeze this file at the end of Week 1. Changing a value here invalidates every
+# run already in results/runs.jsonl -- the run_id hash will not protect you from
+# comparing across the change, only from silently overwriting.
+
+target_model: Qwen/Qwen2.5-0.5B
+
+# QLoRA
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_targets: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+# Optimisation
+learning_rate: 2.0e-4     # Study 2 sweeps this; everywhere else it is fixed
+epochs: 3
+batch_size: 4
+grad_accum: 4             # effective batch 16
+max_seq_len: 512
+warmup_ratio: 0.03
+weight_decay: 0.0
+max_grad_norm: 1.0
+
+# Evaluation (frozen Week 1, never changed)
+eval_batch_size: 8
+harness_tasks: [ifeval, arc_easy, hellaswag]
+harness_limit: null       # set to e.g. 500 only if the budget forces it, and say so
+n_judge_prompts: 0        # Study 1 raises this to 200; the sweeps do not need it
+gen_max_new_tokens: 256

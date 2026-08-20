@@ -1,0 +1,44 @@
+# The two anchors Study 1 needs but the grid cannot express.
+# ratio=1.0 is the full-data ceiling; run it with 3 seeds, it is the expensive one.
+# The 0% anchor (base model, no tuning) is produced by scripts/zero_shot.py.
+#
+# Inherits configs/base.yaml; values below are the deliberate overrides.
+
+target_model: Qwen/Qwen2.5-0.5B
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_targets:
+- q_proj
+- k_proj
+- v_proj
+- o_proj
+- gate_proj
+- up_proj
+- down_proj
+learning_rate: 0.0002
+epochs: 3
+batch_size: 4
+grad_accum: 4
+max_seq_len: 512
+warmup_ratio: 0.03
+weight_decay: 0.0
+max_grad_norm: 1.0
+eval_batch_size: 8
+harness_tasks:
+- ifeval
+- arc_easy
+- hellaswag
+harness_limit: null
+n_judge_prompts: 200
+gen_max_new_tokens: 256
+study: study1_main_grid
+grid:
+  selection_method:
+  - full
+  ratio:
+  - 1.0
+  seed:
+  - 0
+  - 1
+  - 2

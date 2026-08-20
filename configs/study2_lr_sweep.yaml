@@ -1,0 +1,54 @@
+# Study 2 -- RQ1, the novel core. Run this FIRST in Week 3; it carries the paper.
+# 4 methods x 3 learning rates x 2 seeds at 5%.
+# The 1e-6 rate is not arbitrary: arXiv:2512.24503 reports proxy rankings only
+# stabilise (Spearman > 0.95) at very small learning rates. Including it tests
+# whether their prescription for data-RECIPE evaluation also stabilises
+# selection-METHOD rankings -- which is the seam this paper occupies.
+# Analyse with stats.ranking_stability(), not by eyeballing a table.
+#
+# Inherits configs/base.yaml; values below are the deliberate overrides.
+
+target_model: Qwen/Qwen2.5-0.5B
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_targets:
+- q_proj
+- k_proj
+- v_proj
+- o_proj
+- gate_proj
+- up_proj
+- down_proj
+learning_rate: 0.0002
+epochs: 3
+batch_size: 4
+grad_accum: 4
+max_seq_len: 512
+warmup_ratio: 0.03
+weight_decay: 0.0
+max_grad_norm: 1.0
+eval_batch_size: 8
+harness_tasks:
+- ifeval
+- arc_easy
+- hellaswag
+harness_limit: null
+n_judge_prompts: 0
+gen_max_new_tokens: 256
+study: study2_lr_sweep
+grid:
+  selection_method:
+  - random
+  - perplexity
+  - ifd
+  - learning_percentage
+  ratio:
+  - 0.05
+  learning_rate:
+  - 1.0e-06
+  - 2.0e-05
+  - 0.0002
+  seed:
+  - 0
+  - 1
