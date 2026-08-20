@@ -3,8 +3,10 @@ __pycache__/
 .venv/
 # Per-run artifacts: per-example losses and generations. Regenerable, and the
 # .npy files add up fast. runs.jsonl itself IS committed -- it is the results.
-results/runs/*
-!results/runs/.gitkeep
+# Per-example held-out losses (8 KB per run) ARE committed: the paired bootstrap
+# cannot run without them, and it is the paper's main statistical tool. Only the
+# bulkier generation dumps are excluded.
+results/runs/**/generations.json
 
 results/figures/*_demo.*
 

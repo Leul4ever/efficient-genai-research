@@ -76,6 +76,7 @@ class ScalingFit:
     multipliers: dict[str, float]
     rmse: float
     n_points: int
+    degenerate: str = ""  # non-empty means the multipliers are NOT trustworthy
     residuals: dict[tuple[str, float], float] = field(default_factory=dict)
 
     def predict(self, method: str, ratio: float) -> float:
@@ -85,6 +86,12 @@ class ScalingFit:
         return self.l_inf + self.amplitude * (e * ratio) ** (-self.alpha)
 
     def describe(self) -> str:
+        if self.degenerate:
+            return chr(10).join([
+                "FIT IS DEGENERATE -- multipliers are not identifiable.",
+                f"  reason: {self.degenerate}",
+                "  Report this rather than the multipliers.",
+            ])
         ranked = sorted(self.multipliers.items(), key=lambda kv: -kv[1])
         lines = [
             f"L(m, r) = {self.l_inf:.4f} + {self.amplitude:.4f} * (e_m * r)^(-{self.alpha:.4f})",
@@ -176,11 +183,27 @@ def fit_scaling(points: list[tuple[str, float, float]],
     for (m, r, _), e in zip(points, res):
         per_point.setdefault((m, r), []).append(float(e))
 
+    rmse = float(np.sqrt(np.mean(res ** 2)))
+
+    # Identifiability check. If the ratio-dependent term is smaller than the
+    # residual noise, L_inf alone explains the data and e_m is unconstrained --
+    # the optimiser will then push some multiplier to an absurd value that looks
+    # like a spectacular result and is pure numerical noise.
+    reasons = []
+    if a < rmse:
+        reasons.append(f"amplitude {a:.2e} is below residual RMSE {rmse:.2e}: the "
+                       "ratio-dependent term carries less signal than the noise")
+    extreme = {m: e for m, e in multipliers.items() if not (1e-2 <= e <= 1e2)}
+    if extreme:
+        reasons.append("implausible multiplier(s): "
+                       + ", ".join(f"{m}={e:.3g}" for m, e in extreme.items()))
+
     return ScalingFit(
         l_inf=float(l_inf), amplitude=float(a), alpha=float(alpha),
         multipliers=multipliers,
-        rmse=float(np.sqrt(np.mean(res ** 2))), n_points=len(points),
+        rmse=rmse, n_points=len(points),
         residuals={k: float(np.mean(v)) for k, v in per_point.items()},
+        degenerate="; ".join(reasons),
     )
 
 

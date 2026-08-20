@@ -257,6 +257,14 @@ def rq4_cost_aware_policy(runs: list[dict]) -> None:
     print("  size, the shared-exponent assumption failed and the multipliers are not")
     print("  trustworthy -- report that rather than the multipliers.")
 
+    if fit.degenerate:
+        print()
+        print("  The budget table and crossovers below are therefore NOT reportable:")
+        print("  they are derived from a fit that does not identify its parameters.")
+        print("  Report the measured selection-cost shares instead -- those are")
+        print("  direct measurements and stand on their own.")
+        return
+
     print()
     print("  What the rule picks, by budget:")
     print(f"  {'budget (FLOPs)':>16} {'method':>22} {'ratio':>7} {'pred. loss':>11}")
@@ -294,6 +302,25 @@ def main() -> None:
     args = ap.parse_args()
 
     if args.all:
+        runs = ok_runs()
+        # Select by what the runs CONTAIN, not by hardcoded study names. The fast
+        # track renamed the studies (fast_grid, fast_lr_sweep) and the hardcoded
+        # filters silently matched nothing, reporting "no runs yet" on a full grid.
+        lr_runs = [r for r in runs
+                   if len({x["config"]["learning_rate"] for x in runs
+                           if x["study"] == r["study"]}) > 1]
+        grid_runs = [r for r in runs if r not in lr_runs]
+        if not grid_runs:
+            grid_runs = runs
+        print(f"{len(grid_runs)} grid runs, {len(lr_runs)} LR-sweep runs")
+        rq1_ranking_stability(lr_runs or runs)
+        rq2_net_cost(grid_runs)
+        rq3_transfer(runs)
+        paired_vs_baseline(grid_runs)
+        rq4_cost_aware_policy(grid_runs)
+        return
+
+    if False:
         runs = ok_runs()
         print(f"{len(runs)} completed runs across "
               f"{len({r['study'] for r in runs})} studies")
