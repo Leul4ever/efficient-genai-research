@@ -192,12 +192,16 @@ if STAGE in ("setup", "all"):
 # cross-method cost claim -- cost.py already reports both -- and state the change.
 if STAGE in ("select", "all"):
     print(f"\n{elapsed()} ===== STAGE 2: selection on GPU =====")
+    # Push after EVERY method, not once at the end. A session that dies during the
+    # last method previously cost all of them: an hour of GPU work committed only
+    # inside /kaggle/working, which is deleted when the session ends. Pushing per
+    # method caps the loss at whichever one was in flight.
     for method in ["perplexity", "diversity", "ifd", "learning_percentage"]:
         for ratio in ["0.05", "0.10"]:
             sh([sys.executable, "scripts/run_selection.py", "--method", method,
                 "--ratio", ratio, "--seed", "0", "1", "--device", "cuda"])
+        push(f"kaggle: {method} selection (GPU)")
     sh(["ls", "-1", "results/selections/"])
-    push("kaggle: selection artifacts (GPU)")
 
 # ------------------------------------------------------------- 3. calibration
 # The whole point of this stage: prove one run works, and measure it, BEFORE

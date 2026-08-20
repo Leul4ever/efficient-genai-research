@@ -1,0 +1,20 @@
+{
+  "note": "Same selection method measured on two devices. Wall-clock differs by 24x; analytical FLOPs are identical. Use FLOPs for cross-method cost claims and report wall-clock only within a device.",
+  "method": "perplexity",
+  "scorer": "HuggingFaceTB/SmolLM-135M",
+  "pool_size": 14000,
+  "measurements": [
+    {
+      "device": "laptop CPU",
+      "wall_clock_s": 11942.99651180004,
+      "flops": 711991080000000.0
+    },
+    {
+      "device": "Kaggle Tesla T4",
+      "wall_clock_s": 493.7,
+      "flops": 711900000000000.0
+    }
+  ],
+  "speedup_wall_clock": 24.2,
+  "flops_ratio": 1.0001
+}
