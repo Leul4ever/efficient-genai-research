@@ -58,6 +58,12 @@ def main() -> None:
                          "separate 16GB GPUs; two sharded processes, one per GPU, "
                          "roughly halve wall-clock for a sweep of small models.")
     ap.add_argument("--n-shards", type=int, default=1)
+    ap.add_argument("--force", action="store_true",
+                    help="re-run conditions already in runs.jsonl. Needed to "
+                         "regenerate per-example loss artifacts when a previous "
+                         "run's files were lost with the machine that produced "
+                         "them -- the metrics survive in runs.jsonl, the .npy "
+                         "vectors the paired bootstrap needs do not.")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
     if not 0 <= args.shard < args.n_shards:
@@ -72,7 +78,9 @@ def main() -> None:
 
     template_hash = load_split()["template_hash"]
 
-    pending = [c for c in conditions if run_id({**c, "template_hash": template_hash}) not in done]
+    pending = ([c for c in conditions
+                if run_id({**c, "template_hash": template_hash}) not in done]
+               if not args.force else list(conditions))
 
     if args.n_shards > 1:
         # Shard on the run_id hash, not on list position. Position-based sharding
@@ -106,6 +114,8 @@ def main() -> None:
                      if k not in ("study",) and not isinstance(v, (list, dict))]
         cmd = [sys.executable, str(Path(__file__).parent / "train.py"),
                "--config", str(args.config), "--set", *overrides]
+        if args.force:
+            cmd.append("--force")
         print(f"\n[{i}/{len(pending)}] {' '.join(overrides)}")
 
         result = subprocess.run(cmd, cwd=Path(__file__).parent.parent)
