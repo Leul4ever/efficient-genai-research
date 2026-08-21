@@ -272,8 +272,14 @@ non-dominated among the scored methods, and the margin IFD earns — 0.016 at
 central claim survives, but only narrowly, only for one method, and only once
 the cost of obtaining that method's signal is included.
 
-The robustness result qualifies that claim further. *[To be completed once the
-LR sweep results are in — §5.4.]*
+The robustness result qualifies that claim further. Rankings are not stable across
+learning rates: the Spearman correlation between the method ordering at lr = 1e-6
+and either higher rate is ρ = −0.50 — a partial inversion, well below the
+Spearman > 0.95 stability threshold. The instability is driven by perplexity,
+which ranks first at the lowest learning rate and last at both higher rates. IFD
+and random are stable across the full sweep. A reported advantage for any
+score-based method should therefore state the learning rate at which it was
+measured; the ranking is not a property of the method alone.
 
 The budget-aware rule we proposed did not produce usable output from the data
 we could collect: the monotonicity assumption the scaling law depends on failed

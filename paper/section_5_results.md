@@ -110,10 +110,49 @@ The measured selection-cost shares in §5.1 require no fit and are unaffected.
 
 ## 5.4 RQ1 — learning-rate robustness
 
-*[Pending: the sweep is being re-run. Six of nine conditions failed silently on a
-learning-rate parsing defect — exponent-form floats without a decimal point were
-passed to the optimiser as strings — leaving results at a single learning rate.
-The defect is fixed and failed runs are now recorded rather than dropped.]*
+**Table 3.** Held-out loss per method and learning rate (ratio 5%, seed 0).
+Rankings in parentheses (1 = best / lowest loss).
+
+| Method | lr = 1e-6 | lr = 2e-5 | lr = 2e-4 |
+|---|---|---|---|
+| Random | 1.8777 (3) | 1.7795 (2) | 1.8059 (2) |
+| Perplexity | **1.8696 (1)** | 1.8340 (3) | 1.8953 (3) |
+| IFD | 1.8765 (2) | **1.7792 (1)** | **1.7778 (1)** |
+
+The headline number is the Spearman rank correlation between the ordering induced
+by lr = 1e-6 and the ordering induced by either higher learning rate: **ρ = −0.50**
+in both cases (Kendall τ = −0.33). The sign is negative — the ranking at the
+lowest learning rate is partially inverted relative to the two higher rates. Under
+the Spearman > 0.95 stability threshold adopted from arXiv:2512.24503, this is an
+unambiguous instability. **H1 is supported.**
+
+The instability is driven entirely by perplexity. At lr = 1e-6, perplexity ranks
+first — it beats random by 0.0081 and IFD by 0.0069. At lr = 2e-5 and lr = 2e-4,
+it ranks last, losing to random by 0.055 and 0.089 respectively. Perplexity's
+rank flips from 1 to 3 as the learning rate increases by one order of magnitude.
+
+IFD and random, by contrast, are stable. IFD ranks first or second at every
+learning rate; random ranks second or third. The Spearman correlation between
+lr = 2e-5 and lr = 2e-4 for all three methods is **ρ = 1.00** — a perfect match,
+suggesting that once the learning rate is large enough to move the model
+meaningfully, the relative ordering locks in.
+
+The mechanism is consistent with the qualitative finding in §5.1 and §6.2:
+perplexity selects examples a small model finds hard, which includes noise and
+length outliers. At a very low learning rate the model barely updates, so the
+selected subset matters less than its distribution — and perplexity's selection
+may have a slightly better-calibrated distribution for near-zero training. Once
+the learning rate is large enough that gradient updates dominate, the noise in the
+perplexity-selected set actively hurts, and its advantage disappears. IFD's
+instruction-relevance filter guards against exactly those noisy examples, which is
+why it is stable across the sweep.
+
+**One-seed caveat.** The sweep ran with a single seed per cell. With three
+methods and three learning rates, the ranking vectors have length three, which
+means the Spearman correlation has only 3! = 6 possible values. The ρ = −0.50
+result is therefore a direction of evidence, not a significance test. Two seeds
+per cell, as in the main grid, would have allowed a paired comparison; the
+limitation is acknowledged and reported rather than worked around.
 
 ## 5.5 What fell inside the noise
 
