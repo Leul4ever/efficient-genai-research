@@ -12,24 +12,86 @@ number that does not yet exist in results/runs.jsonl, cut the sentence -- do not
 run the experiment.
 -->
 
-## 1. Introduction  *(700 words)*
+## 1. Introduction
 
-<!-- The two-sentence version of the contribution, which everything else expands:
+Recent progress in generative AI has come overwhelmingly from scale: more
+parameters, more data, more compute. The results are real, but the recipe is
+expensive, hard to reproduce, and closed to most researchers. A large body of
+work therefore asks whether the same quality can be reached with less — and one
+of the most active answers is *data selection*: if most of an instruction-tuning
+corpus is redundant, then identifying the useful fraction should buy most of the
+benefit at a fraction of the cost.
 
-     Efficiency claims for instruction-tuning data selection rest on two unexamined
-     assumptions: that the cost of SELECTING data is negligible, and that method
-     rankings measured at one hyperparameter setting hold at others. We test both.
+The reported results are striking. Methods based on instruction difficulty,
+embedding diversity, gradient influence, and small proxy models all report
+matching or beating full-data training using a few percent of the pool. One
+result is directly upstream of this work: Zhang et al. (arXiv:2402.10430) show
+that a 350M model can curate instruction data for models up to 13B, with a 13B
+target beating full-data training on 3% of the pool.
 
-     Land the gap explicitly: arXiv:2402.10430 validates proxy-based selection under
-     a single fixed configuration and states that it does not price the selection
-     step; arXiv:2512.24503 (ICLR 2026) shows proxy-model rankings are fragile to
-     learning rate for data-RECIPE evaluation. Nobody has asked whether
-     selection-METHOD rankings survive the same test. -->
+This paper does not propose a better way to select data. It asks whether the
+existing evidence that selection helps survives two things it was never tested
+against.
+
+**First, selection is not free, but it is priced as though it were.** Every
+selection method must compute something over the whole candidate pool before a
+single target-training step can run — forward passes at minimum, and for the
+strongest methods a full training epoch of a proxy model. That compute is
+reported, when it is reported at all, as a footnote rather than as part of the
+efficiency claim. Zhang et al. state explicitly that their accounting excludes
+it. But under a finite budget, compute spent selecting data is compute not spent
+training on it, and a method that spends more on selection than it saves on
+training has not made anything more efficient. The comparison that matters is
+quality per unit of *total* compute, and it is not the comparison the literature
+reports.
+
+**Second, method rankings are measured at one hyperparameter setting.** Every
+selection method in the literature is validated by training a target model under
+a single fixed configuration and comparing final quality. Running against this,
+recent work on proxy models (arXiv:2512.24503, ICLR 2026) finds that rankings of
+*data recipes* produced by small proxy runs are fragile to hyperparameters: using
+identical settings across datasets in the name of fairness is itself a source of
+error, because the optimal configuration is dataset-specific, and rankings only
+stabilise under deliberately reduced learning rates.
+
+Those two results have not been put together. Proxy-based *data selection* is
+validated under one fixed configuration; proxy-based *data recipe evaluation* is
+known to be hyperparameter-fragile. Nobody has asked whether selection-*method*
+rankings survive re-tuning the target's learning rate, and nobody prices the
+selection step into the claim it supports. That seam is what this paper occupies.
 
 **Contributions.**
-1. TODO
-2. TODO
-3. TODO
+
+1. **A robustness test of selection-method rankings (RQ1).** We re-tune the
+   target's learning rate across three orders of magnitude and measure whether
+   the ranking of selection methods persists. Rankings are not stable: the
+   Spearman correlation between the method ordering at lr = 1e-6 and either
+   higher rate is ρ = −0.50, a partial inversion driven entirely by perplexity
+   flipping from first to last. IFD and random are stable across the sweep.
+
+2. **A net-cost accounting of selection (RQ2).** We measure the compute each
+   method spends on selection in analytical FLOPs, and recompute the
+   quality-per-compute frontier with that cost included. Selection accounts for
+   58.9–83.6% of total compute for every method that uses a model to select.
+   The training-based method costs 6.4× more than random and delivers worse
+   held-out loss. On a total-compute Pareto frontier, perplexity leaves the
+   frontier entirely; only IFD remains non-dominated among the scored methods.
+
+3. **Budget-aware selection, a proposed decision rule (RQ4).** We summarise each
+   method by a single interpretable scalar — its *effective data multiplier* —
+   and derive in closed form which (method, ratio) pair maximises quality under
+   a stated compute budget. The rule did not produce a usable fit from our data:
+   the monotonicity assumption it depends on failed at the epoch budgets we could
+   run. We report this rather than suppress it, and identify the missing
+   precondition: at least three selection ratios spanning a monotone region of
+   the loss curve.
+
+We are explicit about what this paper does not do. It does not propose a new
+selection signal, does not chase state of the art, and does not run at scales
+where selection is most economically consequential. Its claim is narrower and,
+we argue, more useful: that two assumptions underpinning a widely reported
+efficiency result are testable, have not been tested, and change the conclusion
+when they are.
 
 ## 2. Related Work  *(800 words)*
 

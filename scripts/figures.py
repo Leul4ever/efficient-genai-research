@@ -422,13 +422,14 @@ def main() -> None:
         return
 
     print(f"rendering figures from {len(runs)} runs:")
-    rows = rows_from_runs([r for r in runs if r["study"] == "study1_main_grid"])
+    grid_runs = [r for r in runs if r["study"] in ("study1_main_grid", "fast_grid")]
+    rows = rows_from_runs(grid_runs)
     if rows:
         figure1_pareto(rows)
     else:
-        print("  fig1 skipped: no study1 runs")
+        print("  fig1 skipped: no study1/fast_grid runs")
 
-    sweep = [r for r in runs if r["study"] == "study2_lr_sweep"]
+    sweep = [r for r in runs if r["study"] in ("study2_lr_sweep", "fast_lr_sweep")]
     by_lr: dict[str, dict[str, list[float]]] = {}
     for r in sweep:
         c = r["config"]

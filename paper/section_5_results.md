@@ -156,21 +156,50 @@ limitation is acknowledged and reported rather than worked around.
 
 ## 5.5 What fell inside the noise
 
-Seed-to-seed spread within a condition reaches 0.0279 in the worst case
-(perplexity@5%), which is larger than several of the between-method differences in
-Table 1. Specifically, the gaps for **diversity (+0.0032 at 5%)**, **learning
-percentage (+0.0129 at 5%, +0.0086 at 10%)**, **IFD (−0.0048 at 10%)** and
-**diversity (+0.0077 at 10%)** are all comparable to or smaller than that spread,
-and with two seeds per condition we cannot separate them from noise.
+Seed-to-seed spread within a condition reaches 0.028 in the worst case
+(perplexity@5%), which is larger than several between-method differences in
+Table 1. The paired bootstrap over held-out examples (10,000 replicates, paired
+on shared example difficulty) separates example-level variance from method
+variance and is the appropriate test for the main grid.
 
-Only two differences in the table are large relative to seed variation: IFD's
-advantage at 5% (−0.0164) and perplexity's deficit (+0.1128 at 5%, +0.0568 at
-10%). The paired bootstrap over held-out examples, which removes the
-example-difficulty variance shared between arms, is the appropriate test for the
-remainder, and is reported per condition in the accompanying results.
+**Table 4.** Paired bootstrap results vs random baseline, per condition.
+CI is 95%; p-values are two-sided. Holm-Bonferroni correction applied across
+16 comparisons (4 methods × 2 ratios × 2 seeds).
 
-**ARC-Easy accuracy is flat across every condition** (0.613–0.632, a range of
-0.019 with no consistent ordering). Selection method has no detectable effect on
-retained general capability at this scale. We report this as a null result rather
-than omitting it: the methods differ in what they teach the model about Dolly's
-response style, not in what they cost it elsewhere.
+| Condition | Δ vs random | 95% CI | p | After correction |
+|---|---|---|---|---|
+| perplexity@5% seed 0 | +0.092 | [+0.070, +0.113] | <0.001 | **significant** |
+| perplexity@5% seed 1 | +0.135 | [+0.115, +0.156] | <0.001 | **significant** |
+| perplexity@10% seed 0 | +0.049 | [+0.029, +0.070] | <0.001 | **significant** |
+| perplexity@10% seed 1 | +0.065 | [+0.047, +0.082] | <0.001 | **significant** |
+| ifd@5% seed 0 | −0.031 | [−0.046, −0.017] | <0.001 | **significant** |
+| diversity@5% seed 1 | +0.012 | [+0.001, +0.022] | 0.024 | inside noise |
+| learning_percentage@5% seed 1 | +0.018 | [+0.003, +0.037] | 0.009 | inside noise |
+| learning_percentage@10% seed 1 | +0.013 | [+0.001, +0.028] | 0.041 | inside noise |
+| ifd@5% seed 1 | −0.006 | [−0.017, +0.004] | 0.261 | inside noise |
+| diversity@5% seed 0 | −0.007 | [−0.017, +0.002] | 0.132 | inside noise |
+| ifd@10% seed 0 | −0.015 | [−0.027, −0.003] | 0.017 | inside noise |
+| ifd@10% seed 1 | +0.004 | [−0.005, +0.015] | 0.381 | inside noise |
+| diversity@10% seed 0 | +0.007 | [−0.005, +0.018] | 0.260 | inside noise |
+| diversity@10% seed 1 | +0.010 | [−0.000, +0.020] | 0.055 | inside noise |
+| learning_percentage@5% seed 0 | +0.007 | [−0.006, +0.023] | 0.361 | inside noise |
+| learning_percentage@10% seed 0 | +0.005 | [−0.007, +0.018] | 0.392 | inside noise |
+
+Five comparisons survive Holm-Bonferroni: all four perplexity conditions (both
+ratios, both seeds) and ifd@5% seed 0. The perplexity results are the wrong sign
+— perplexity is detectably *worse* than random, not better. The single IFD result
+that survives correction (Δ = −0.031, p < 0.001) is at seed 0 only; seed 1's IFD
+advantage (−0.006) is inside noise. That asymmetry across seeds is consistent
+with the seed spread of 0.003 reported in Table 1 — at 5%, IFD's advantage is
+real but small relative to seed noise.
+
+Every other comparison — all diversity conditions, all learning_percentage
+conditions, IFD at 10%, and IFD at 5% seed 1 — falls inside noise after
+correction. **The only method with a statistically defensible advantage over
+random, after multiplicity correction, is IFD at 5% in one of two seeds.**
+
+**ARC-Easy accuracy is flat across every condition** (0.593–0.643, no consistent
+ordering). Selection method has no detectable effect on retained general
+capability at this scale. We report this as a null result rather than omitting
+it: the methods differ in what they teach the model about Dolly's response style,
+not in what they cost it elsewhere.
