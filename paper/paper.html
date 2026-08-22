@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Does Proxy-Based Data Selection Survive Contact With Reality?</title>
+<style>
+
+@page {
+    size: A4;
+    margin: 20mm 18mm 20mm 18mm;
+    @bottom-center {
+        content: counter(page);
+        font-family: 'Times New Roman', Times, serif;
+        font-size: 10pt;
+    }
+}
+
+body {
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 11pt;
+    line-height: 1.5;
+    color: #111;
+    background-color: #fff;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+h1 {
+    font-size: 22pt;
+    font-weight: bold;
+    text-align: center;
+    margin-top: 20pt;
+    margin-bottom: 8pt;
+    line-height: 1.2;
+}
+
+h2 {
+    font-size: 14pt;
+    font-weight: bold;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 4px;
+    margin-top: 18pt;
+    margin-bottom: 8pt;
+}
+
+h3 {
+    font-size: 12pt;
+    font-weight: bold;
+    margin-top: 14pt;
+    margin-bottom: 6pt;
+}
+
+p {
+    text-align: justify;
+    margin-bottom: 10pt;
+    text-indent: 0;
+}
+
+em {
+    font-style: italic;
+}
+
+strong {
+    font-weight: bold;
+}
+
+blockquote {
+    margin: 12pt 20pt;
+    padding: 8pt 12pt;
+    background-color: #f8f9fa;
+    border-left: 4px solid #0056b3;
+    font-style: italic;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14pt 0;
+    font-size: 9.5pt;
+    font-family: 'Arial', sans-serif;
+}
+
+th, td {
+    border: 1px solid #ddd;
+    padding: 6px 10px;
+    text-align: left;
+}
+
+th {
+    background-color: #f2f2f2;
+    font-weight: bold;
+}
+
+tr:nth-child(even) {
+    background-color: #fafafa;
+}
+
+img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 14pt auto 6pt auto;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+}
+
+code {
+    font-family: 'Consolas', 'Courier New', monospace;
+    background-color: #f4f4f4;
+    padding: 2px 5px;
+    font-size: 9.5pt;
+    border-radius: 3px;
+}
+
+pre {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    padding: 10px;
+    overflow-x: auto;
+    font-size: 9pt;
+    border-radius: 4px;
+}
+
+pre code {
+    background-color: transparent;
+    padding: 0;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid #e0e0e0;
+    margin: 20pt 0;
+}
+
+ul, ol {
+    margin-bottom: 10pt;
+    padding-left: 24px;
+}
+
+li {
+    margin-bottom: 4px;
+}
+
+</style>
+</head>
+<body>
+<h1 id="does-proxy-based-data-selection-survive-contact-with-reality">Does Proxy-Based Data Selection Survive Contact With Reality?</h1>
+<p><em>Robustness and net-cost accounting for efficient instruction tuning.</em></p>
+<hr />
+<h2 id="1-introduction">1. Introduction</h2>
+<p>Recent progress in generative AI has come overwhelmingly from scale: more
+parameters, more data, more compute. The results are real, but the recipe is
+expensive, hard to reproduce, and closed to most researchers. A large body of
+work therefore asks whether the same quality can be reached with less — and one
+of the most active answers is <em>data selection</em>: if most of an instruction-tuning
+corpus is redundant, then identifying the useful fraction should buy most of the
+benefit at a fraction of the cost.</p>
+<p>The reported results are striking. Methods based on instruction difficulty,
+embedding diversity, gradient influence, and small proxy models all report
+matching or beating full-data training using a few percent of the pool. One
+result is directly upstream of this work: Zhang et al. (arXiv:2402.10430) show
+that a 350M model can curate instruction data for models up to 13B, with a 13B
+target beating full-data training on 3% of the pool.</p>
+<p>This paper does not propose a better way to select data. It asks whether the
+existing evidence that selection helps survives two things it was never tested
+against.</p>
+<p><strong>First, selection is not free, but it is priced as though it were.</strong> Every
+selection method must compute something over the whole candidate pool before a
+single target-training step can run — forward passes at minimum, and for the
+strongest methods a full training epoch of a proxy model. That compute is
+reported, when it is reported at all, as a footnote rather than as part of the
+efficiency claim. Zhang et al. state explicitly that their accounting excludes
+it. But under a finite budget, compute spent selecting data is compute not spent
+training on it, and a method that spends more on selection than it saves on
+training has not made anything more efficient. The comparison that matters is
+quality per unit of <em>total</em> compute, and it is not the comparison the literature
+reports.</p>
+<p><strong>Second, method rankings are measured at one hyperparameter setting.</strong> Every
+selection method in the literature is validated by training a target model under
+a single fixed configuration and comparing final quality. Running against this,
+recent work on proxy models (arXiv:2512.24503, ICLR 2026) finds that rankings of
+<em>data recipes</em> produced by small proxy runs are fragile to hyperparameters: using
+identical settings across datasets in the name of fairness is itself a source of
+error, because the optimal configuration is dataset-specific, and rankings only
+stabilise under deliberately reduced learning rates.</p>
+<p>Those two results have not been put together. Proxy-based <em>data selection</em> is
+validated under one fixed configuration; proxy-based <em>data recipe evaluation</em> is
+known to be hyperparameter-fragile. Nobody has asked whether selection-<em>method</em>
+rankings survive re-tuning the target's learning rate, and nobody prices the
+selection step into the claim it supports. That seam is what this paper occupies.</p>
+<p><strong>Contributions.</strong></p>
+<ol>
+<li>
+<p><strong>A robustness test of selection-method rankings (RQ1).</strong> We re-tune the
+   target's learning rate across three orders of magnitude and measure whether
+   the ranking of selection methods persists. Rankings are not stable: the
+   Spearman correlation between the method ordering at lr = 1e-6 and either
+   higher rate is ρ = −0.50, a partial inversion driven entirely by perplexity
+   flipping from first to last. IFD and random are stable across the sweep.</p>
+</li>
+<li>
+<p><strong>A net-cost accounting of selection (RQ2).</strong> We measure the compute each
+   method spends on selection in analytical FLOPs, and recompute the
+   quality-per-compute frontier with that cost included. Selection accounts for
+   58.9–83.6% of total compute for every method that uses a model to select.
+   The training-based method costs 6.4× more than random and delivers worse
+   held-out loss. On a total-compute Pareto frontier, perplexity leaves the
+   frontier entirely; only IFD remains non-dominated among the scored methods.</p>
+</li>
+<li>
+<p><strong>Budget-aware selection, a proposed decision rule (RQ4).</strong> We summarise each
+   method by a single interpretable scalar — its <em>effective data multiplier</em> —
+   and derive in closed form which (method, ratio) pair maximises quality under
+   a stated compute budget. The rule did not produce a usable fit from our data:
+   the monotonicity assumption it depends on failed at the epoch budgets we could
+   run. We report this rather than suppress it, and identify the missing
+   precondition: at least three selection ratios spanning a monotone region of
+   the loss curve.</p>
+</li>
+</ol>
+<p>We are explicit about what this paper does not do. It does not propose a new
+selection signal, does not chase state of the art, and does not run at scales
+where selection is most economically consequential. Its claim is narrower and,
+we argue, more useful: that two assumptions underpinning a widely reported
+efficiency result are testable, have not been tested, and change the conclusion
+when they are.</p>
+<hr />
+<h2 id="2-related-work">2. Related Work</h2>
+<p>Instruction-tuning data selection asks which subset of a large instruction pool
+should be used to adapt a model, on the premise that most of the pool is
+redundant. Work in the area falls into groups that differ in the signal they use,
+and each group ends here on the thing it holds fixed — because those fixed
+assumptions, taken together, are what this paper tests.</p>
+<p><strong>Coreset and diversity selection.</strong> The oldest line treats selection as subset
+selection under a submodular objective: choose examples maximising coverage of a
+representation space. Facility-location maximisation over sentence embeddings is
+the canonical instance, with a greedy solver carrying the standard <code>(1 - 1/e)</code>
+guarantee. These methods are attractive because they need no gradient information
+and no training, but they optimise a proxy — embedding coverage — with no
+guarantee that coverage in an embedding space corresponds to usefulness for the
+target model. <em>Held fixed: that the embedding space used to measure diversity is
+the relevant one.</em></p>
+<p><strong>Difficulty and quality scoring.</strong> A second line scores each example
+individually. Cherry-LLM introduced Instruction-Following Difficulty (IFD), the
+ratio of the response's perplexity conditioned on its instruction to its
+unconditional perplexity; a ratio below one means the instruction <em>helped</em>, so
+the example is easy and can be discarded. DEITA combines learned complexity and
+quality scores with an embedding-diversity filter. These methods report large
+gains from small fractions of data. <em>Held fixed: a single scoring model, and a
+single training configuration for the model being tuned.</em></p>
+<p><strong>Influence and gradient-based selection.</strong> LESS selects examples whose low-rank
+gradient features align with a target task's gradients, making selection
+task-directed rather than generic. It is the most expensive family: it requires
+gradient computation over the whole candidate pool, and a warmup training run to
+produce the gradient features. Recent work (Iprox) attacks precisely that cost by
+compressing the model used to compute gradient features. <em>Held fixed: that the
+cost of computing the selection signal is worth paying, without an explicit
+accounting of what else that compute could have bought.</em></p>
+<p><strong>Proxy-model selection.</strong> The closest antecedent to this work shows that a small
+model can curate data for a much larger one. Zhang et al. (arXiv:2402.10430)
+define a <em>learning percentage</em> — how much one epoch of training reduces an
+example's loss — and show that a 350M model's ranking transfers to targets from
+1B to 13B, with a 13B model matching full-data training on 3% of the pool. The
+paper states plainly that it does not account for the cost of selection, and the
+learning-percentage signal is not cheap: it requires training the proxy for a
+full epoch before any target training can begin. <em>Held fixed: the cost of the
+proxy epoch, and the target's hyperparameters.</em></p>
+<p><strong>Proxy fragility.</strong> Running against that optimism, Can Small Training Runs
+Reliably Guide Data Curation? (arXiv:2512.24503, ICLR 2026) finds that
+proxy-model rankings of <em>data recipes</em> are fragile to hyperparameters: using
+identical training settings across datasets in the name of fairness produces
+misleading conclusions, because the optimal configuration is dataset-specific.
+Their remedy is to evaluate proxies at deliberately reduced learning rates, under
+which small-scale rankings correlate strongly with fully tuned large-scale runs.
+<em>Held fixed: the object being ranked is a data recipe, not a selection method.</em></p>
+<p><strong>The gap.</strong> Put the last two groups side by side. Proxy-based <em>data selection</em>
+is validated under one fixed hyperparameter configuration. Proxy-based <em>data
+recipe evaluation</em> is now known to be hyperparameter-fragile. Nobody has asked
+whether selection-<em>method</em> rankings survive re-tuning the target's learning rate,
+and nobody prices the selection step into the efficiency claim it supports. This
+paper occupies that seam: it tests the robustness assumption, prices the cost
+assumption, and proposes a selection rule that makes the resulting trade-off
+explicit rather than implicit.</p>
+<hr />
+<h2 id="3-methodology">3. Methodology</h2>
+<h3 id="31-selection-methods-and-cost-classes">3.1 Selection methods and cost classes</h3>
+<p>We compare five selection methods, grouped by the kind of computation each
+requires before target training can start. That grouping — not the methods
+themselves — is the axis the paper's argument rides on.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Signal</th>
+<th>Cost class</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Random</td>
+<td>none</td>
+<td>free</td>
+</tr>
+<tr>
+<td>Embedding diversity</td>
+<td>facility location over MiniLM embeddings</td>
+<td>training-free</td>
+</tr>
+<tr>
+<td>Perplexity</td>
+<td>response NLL under a 135M scorer</td>
+<td>training-free</td>
+</tr>
+<tr>
+<td>IFD</td>
+<td>conditional vs unconditional response NLL</td>
+<td>training-free</td>
+</tr>
+<tr>
+<td>Learning percentage</td>
+<td>loss reduction after one proxy epoch</td>
+<td><strong>training-based</strong></td>
+</tr>
+</tbody>
+</table>
+<p><em>Free</em> methods need no model evaluation at all. <em>Training-free</em> methods need
+forward passes only. <em>Training-based</em> methods need gradient updates before a
+single selected example can be identified. The distinction matters because a
+fixed cost paid before training is compute unavailable for training.</p>
+<p>Two implementation choices must be stated, because both depart from the sources.</p>
+<p><strong>IFD is computed with an off-the-shelf pretrained scorer</strong>, not Cherry-LLM's
+"brief experience" model, which is first fine-tuned on a small slice of the pool.
+The original formulation is therefore training-based; ours is training-free. The
+two are not interchangeable, and the difference is exactly a cost-class
+difference — which is what makes it relevant here rather than incidental.</p>
+<p><strong>IFD and perplexity use the same 135M scorer.</strong> A larger scorer for IFD would
+make the two arms differ in two ways at once — signal and scorer capacity — and a
+win could not be attributed to either without a third arm to disentangle them.</p>
+<h3 id="32-the-total-cost-model">3.2 The total-cost model</h3>
+<p>Every method is charged for the compute it consumes, in two currencies.</p>
+<p><em>Analytical FLOPs.</em> A forward pass costs approximately <code>2ND</code> FLOPs for <code>N</code>
+parameters and <code>D</code> tokens. LoRA training costs approximately <code>4ND</code>: the backward
+pass still propagates activation gradients through every frozen layer, but
+computes no weight gradients for them. Full fine-tuning costs approximately
+<code>6ND</code>. These are approximations and are treated as such.</p>
+<p><em>Wall-clock</em>, measured with a stopwatch on stated hardware.</p>
+<p>Neither is sufficient alone. Wall-clock conflates method cost with hardware;
+FLOPs ignore that a CPU you already own and a rented GPU are not the same
+resource. We report both, and we are explicit about a constraint this imposes:
+<strong>wall-clock is comparable only within a device.</strong> We observed the same
+perplexity selection take 11,943 s on a laptop CPU and 493.7 s on a Tesla T4 — a
+24× difference — with analytical FLOPs identical to within 0.01%. Every
+cross-method cost claim in this paper therefore uses FLOPs.</p>
+<h3 id="33-budget-aware-selection-proposed">3.3 Budget-aware selection (proposed)</h3>
+<p>The literature asks <em>which selection method is best</em>. That question is ill-posed.
+Methods carry different fixed costs, so under a finite budget the answer changes
+with the budget. We make this explicit.</p>
+<p><strong>Quality.</strong> We model held-out loss with a data-scaling law in which each method
+is summarised by one scalar, its <strong>effective data multiplier</strong> <code>e_m</code>:</p>
+<pre><code>L(m, r) = L_inf + A · (e_m · r)^(-α),     e_random := 1
+</code></pre>
+<p>A method selecting fraction <code>r</code> behaves like random selection at fraction
+<code>e_m · r</code>. So <code>e_ifd = 2.4</code> means "IFD's 5% is worth 10% of randomly chosen
+data" — the claim the efficiency literature makes implicitly, reduced to one
+interpretable, falsifiable number. Pinning <code>e_random = 1</code> makes the
+parameterisation identifiable; otherwise <code>e</code> and <code>A</code> trade off freely. The
+exponent <code>α</code> is shared across methods: it is a property of the dataset and task,
+and per-method exponents are not identifiable from two ratios. We report the
+fit's residuals so the reader can judge whether that assumption held.</p>
+<p>One subtlety: at <code>r = 1</code> every method selects the identical set — the whole pool
+— so a full-data point carries no information about any method's multiplier and
+is attributed to the baseline. Failing to do this lets the ceiling run inflate
+whichever method happened to supply it.</p>
+<p><strong>Cost.</strong> <code>C(m, r) = C_sel(m) + c_train · r</code>, with <code>C_sel</code> measured, not assumed.</p>
+<p><strong>The rule.</strong> Loss decreases monotonically in <code>r</code>, so the best ratio for a method
+is the largest it can still afford after paying its own selection cost:</p>
+<pre><code>r*(m) = clip((B - C_sel(m)) / c_train, 0, 1)
+choose  argmin_m  L(m, r*(m))
+</code></pre>
+<p>Closed-form, no search. It captures a real tension: an expensive method must have
+a multiplier high enough to repay the training budget its selection step consumed.</p>
+<p>From it we derive the <strong>crossover budget</strong> — the budget below which a method does
+not repay its own selection cost. This is the paper's most quotable output,
+because it replaces "method X is better" with "method X is better above B."</p>
+<h3 id="34-the-robustness-protocol">3.4 The robustness protocol</h3>
+<p>For RQ1 we compute Spearman and Kendall correlations between the method orderings
+induced by each learning-rate condition. If selection-method rankings were a
+stable property of the methods, these correlations would sit near 1.0 regardless
+of learning rate. We adopt the Spearman &gt; 0.95 "stable" threshold used by
+arXiv:2512.24503 so that our result is directly comparable to theirs.</p>
+<hr />
+<h2 id="4-experimental-setup">4. Experimental Setup</h2>
+<p><img alt="Figure 5: Dataset overview for databricks-dolly-15k" src="file:///D:/Ai/efficient-genai-research/results/figures/eda1_dataset_overview.png" />
+<strong>Figure 5.</strong> Dataset overview for databricks-dolly-15k showing instruction word count distribution, response word count distribution, and category composition across the candidate pool.</p>
+<p>As shown in Figure 5, the Dolly dataset pool contains 15,011 instruction-response pairs with diverse category distributions and a wide spread of response lengths.</p>
+<p><strong>Pool and split.</strong> databricks-dolly-15k (15,011 examples), split once with seed 0
+into 14,000 training candidates and 1,000 held-out examples. The split is frozen
+and committed; the prompt template is hashed (<code>cb11391ee245</code>) into the split file,
+and the pipeline refuses to run if the template changes afterwards, so silent
+template drift cannot invalidate results unnoticed.</p>
+<p><strong>Target model and adaptation.</strong> Qwen2.5-0.5B with LoRA (<code>r=16</code>, <code>α=32</code>,
+dropout 0.05) on all attention and MLP projections, sequence length 512, three
+epochs, batch size 4 with gradient accumulation 4 (effective batch 16), AdamW,
+cosine schedule with 3% warmup, fp16 autocast with trainable parameters kept in
+fp32. Every hyperparameter is identical across conditions except the one variable
+a study manipulates.</p>
+<p>We report <strong>LoRA, not QLoRA</strong>. 4-bit quantization was dropped: at 0.5B it is
+unnecessary on a 15 GB GPU, and it is a confound — with quantized weights, a
+difference between selection methods is entangled with how each selected subset
+interacts with quantization error.</p>
+<p><strong>Selection ratios.</strong> 5% (700 examples) and 10% (1,400), against a full-data
+ceiling. Two seeds per condition.</p>
+<p><strong>Measured selection costs</strong> (Tesla T4, 14,000 examples):</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Wall-clock</th>
+<th>FLOPs</th>
+<th>Class</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Random</td>
+<td>0 s</td>
+<td>0</td>
+<td>free</td>
+</tr>
+<tr>
+<td>Diversity</td>
+<td>58.0 s</td>
+<td>9.38e13</td>
+<td>training-free</td>
+</tr>
+<tr>
+<td>Perplexity</td>
+<td>493.7 s</td>
+<td>7.12e14</td>
+<td>training-free</td>
+</tr>
+<tr>
+<td>IFD</td>
+<td>959.3 s</td>
+<td>1.01e15</td>
+<td>training-free</td>
+</tr>
+<tr>
+<td>Learning percentage</td>
+<td>1,624.7 s</td>
+<td>3.57e15</td>
+<td>training-based</td>
+</tr>
+</tbody>
+</table>
+<p>The training-based method costs 28× the cheapest training-free method in
+wall-clock and 38× in FLOPs, measured on identical hardware. Scores are cached by
+scorer configuration, so a method pays this cost once rather than once per
+(ratio, seed) — the signal is deterministic and does not depend on the seed.</p>
+<p><strong>Evaluation.</strong> Primary: mean response negative log-likelihood on the frozen
+1,000-example held-out split, stored <strong>per example</strong> rather than as a mean, so
+that comparisons can be paired. Capability retention: ARC-Easy, 300 examples.</p>
+<p>We note the limitation this metric carries: held-out Dolly loss rewards selections
+that are Dolly-typical, and so is not a neutral arbiter between methods.</p>
+<p><strong>Statistics.</strong> Differences are tested with a paired bootstrap over held-out
+examples (10,000 replicates), which removes example-difficulty variance shared by
+both arms. Seeds are aggregated separately, as a distinct variance source; pooling
+seeds and examples into one bootstrap would produce intervals that are too narrow.
+Every reported difference carries a 95% CI, and differences whose CI straddles
+zero are named explicitly as inside noise rather than omitted. Across the main
+grid we apply Holm-Bonferroni correction.</p>
+<p><strong>Hardware.</strong> Kaggle Tesla T4 (15 GB) and NVIDIA RTX 3070 (8 GB). Selection and
+training run on GPU; the laptop-CPU figures reported in Section 3.2 are a separate
+device-comparison measurement and are not mixed into the cost tables.</p>
+<hr />
+<h2 id="5-results">5. Results</h2>
+<p>All results are from Qwen2.5-0.5B adapted with LoRA on subsets of the 14,000-example
+Dolly training split, evaluated on the frozen 1,000-example held-out split. Two
+seeds per condition. Table 1 gives the main grid.</p>
+<p><strong>Table 1.</strong> Main grid. Loss is mean response NLL on the held-out split (lower is
+better); <code>sd</code> is over two seeds; <code>Δ random</code> is the difference against the random
+baseline at the same ratio; <code>sel %</code> is the share of <em>total</em> FLOPs spent on
+selection rather than training.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Ratio</th>
+<th>Loss</th>
+<th>sd</th>
+<th>Δ random</th>
+<th>ARC-E</th>
+<th>sel %</th>
+<th>Total FLOPs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ifd</td>
+<td>5%</td>
+<td><strong>1.7801</strong></td>
+<td>0.0031</td>
+<td>−0.0164</td>
+<td>0.622</td>
+<td>58.9%</td>
+<td>1.71e15</td>
+</tr>
+<tr>
+<td>random</td>
+<td>5%</td>
+<td>1.7965</td>
+<td>0.0134</td>
+<td>—</td>
+<td>0.632</td>
+<td><strong>0.0%</strong></td>
+<td>6.63e14</td>
+</tr>
+<tr>
+<td>diversity</td>
+<td>5%</td>
+<td>1.7996</td>
+<td>0.0001</td>
+<td>+0.0032</td>
+<td>0.618</td>
+<td>11.0%</td>
+<td>8.54e14</td>
+</tr>
+<tr>
+<td>learning percentage</td>
+<td>5%</td>
+<td>1.8093</td>
+<td>0.0056</td>
+<td>+0.0129</td>
+<td>0.618</td>
+<td><strong>83.6%</strong></td>
+<td>4.27e15</td>
+</tr>
+<tr>
+<td>perplexity</td>
+<td>5%</td>
+<td>1.9093</td>
+<td>0.0197</td>
+<td>+0.1128</td>
+<td>0.628</td>
+<td>72.0%</td>
+<td>9.88e14</td>
+</tr>
+<tr>
+<td>ifd</td>
+<td>10%</td>
+<td>1.7977</td>
+<td>0.0075</td>
+<td>−0.0048</td>
+<td>0.617</td>
+<td>42.0%</td>
+<td>2.39e15</td>
+</tr>
+<tr>
+<td>random</td>
+<td>10%</td>
+<td>1.8025</td>
+<td>0.0044</td>
+<td>—</td>
+<td>0.615</td>
+<td>0.0%</td>
+<td>1.33e15</td>
+</tr>
+<tr>
+<td>diversity</td>
+<td>10%</td>
+<td>1.8103</td>
+<td>0.0030</td>
+<td>+0.0077</td>
+<td>0.618</td>
+<td>5.8%</td>
+<td>1.63e15</td>
+</tr>
+<tr>
+<td>learning percentage</td>
+<td>10%</td>
+<td>1.8111</td>
+<td>0.0007</td>
+<td>+0.0086</td>
+<td>0.613</td>
+<td>72.2%</td>
+<td>4.94e15</td>
+</tr>
+<tr>
+<td>perplexity</td>
+<td>10%</td>
+<td>1.8594</td>
+<td>0.0060</td>
+<td>+0.0568</td>
+<td>0.617</td>
+<td>49.4%</td>
+<td>1.44e15</td>
+</tr>
+</tbody>
+</table>
+<h3 id="51-rq2-what-selection-actually-costs">5.1 RQ2 — what selection actually costs</h3>
+<p>The <code>sel %</code> column is the paper's central measurement, and it is a direct
+measurement rather than a model fit. <strong>Selection accounts for between 42% and 84%
+of total compute for every method that uses a model to select.</strong> Learning
+percentage — the strongest method in the source literature — spends <strong>83.6% of all
+FLOPs deciding what to train on</strong> and 16.4% training on it. IFD spends 58.9%,
+perplexity 72.0%. Only embedding diversity is cheap in relative terms, at 11.0%,
+because MiniLM is two orders of magnitude smaller than the scorers.</p>
+<p>This is not a rounding error to be relegated to a footnote. It is the dominant
+term. An efficiency claim that omits it is not measuring efficiency.</p>
+<p><img alt="Figure 1: Pareto frontier comparison" src="file:///D:/Ai/efficient-genai-research/results/figures/fig1_pareto.png" />
+<strong>Figure 1.</strong> Pareto frontier of held-out loss against training compute alone (left panel, as accounted in prior literature) versus total compute including selection FLOPs (right panel, true net cost). Scored on total compute, perplexity@5% leaves the Pareto frontier entirely because its selection cost outweighs its downstream benefit.</p>
+<p><img alt="Figure 2: Stacked compute breakdown" src="file:///D:/Ai/efficient-genai-research/results/figures/eda5_cost_breakdown.png" />
+<strong>Figure 2.</strong> Stacked compute breakdown showing selection FLOPs versus training FLOPs across selection methods. Model-based methods consume 58.9% to 83.6% of total FLOPs during the selection phase before training begins.</p>
+<p>As illustrated in Figure 2, the selection overhead dominates the overall compute budget for model-based selectors. The consequence for the Pareto frontier is direct, as demonstrated in Figure 1. Scored on <strong>training compute
+alone</strong> — the accounting used in prior work — the frontier is
+{random@5%, perplexity@5%, ifd@5%}. Scored on <strong>total compute</strong>, perplexity@5%
+leaves the frontier entirely: it is dominated, because the FLOPs it spent scoring
+14,000 examples buy more quality when spent on training instead. <strong>H2 is
+supported.</strong></p>
+<p>Two results in the table sharpen the point further.</p>
+<p><strong>The most expensive method loses to doing nothing.</strong> Learning percentage costs
+4.27e15 FLOPs at 5% — 6.4× the random baseline — and scores <em>worse</em> (1.8093 vs
+1.7965, Δ = +0.0129). Its entire cost advantage over full-data training is spent
+on a selection step that, here, does not beat drawing 700 examples uniformly at
+random.</p>
+<p><strong>Perplexity is not merely unhelpful but actively harmful.</strong> At 5% it is 0.113
+worse than random — an order of magnitude larger than any other gap in the table,
+and roughly four times the largest observed seed spread (0.0279). Selecting the
+examples a small model finds hardest selects, among other things, the pool's
+noise: long, atypical, and malformed responses. The qualitative inspection in Section 6
+bears this out.</p>
+<p><strong>Only IFD beats random</strong>, by 0.0164 at 5%, and it pays 58.9% of total compute for
+that margin. Whether that trade is worth making is exactly the question the
+budget-aware rule in Section 3.3 is designed to answer, and Section 5.3 reports what happened
+when we tried to answer it.</p>
+<h3 id="52-more-selected-data-made-models-worse">5.2 More selected data made models worse</h3>
+<p>Four of the five methods score <strong>worse at 10% than at 5%</strong>: random +0.0061,
+diversity +0.0107, IFD +0.0177, learning percentage +0.0018. Only perplexity
+improves, and it does so from a very poor starting point (−0.0499).</p>
+<p>The training configuration is identical across ratios — three epochs, same
+hyperparameters — so doubling the data doubles the number of gradient steps.
+Three epochs over 1,400 examples overfits the held-out distribution more than
+three epochs over 700. Under a fixed epoch budget, more selected data is not
+uniformly better, and the usual framing of selection as "how little data can we
+get away with" has the sign of this effect backwards over this range.</p>
+<p>This has a methodological consequence we did not anticipate and report rather than
+work around: it <strong>breaks the monotonicity assumption</strong> that the data-scaling law in
+Section 3.3 depends on.</p>
+<h3 id="53-rq4-the-budget-aware-rule-did-not-fit">5.3 RQ4 — the budget-aware rule did not fit</h3>
+<p>We attempted to fit the scaling law of Section 3.3 to the grid. <strong>The fit is degenerate
+and we do not report its parameters.</strong></p>
+<p>The fitted amplitude collapsed to 7.9e-04, below the residual RMSE of 8.9e-03.
+When the ratio-dependent term carries less signal than the noise around it,
+<code>L_inf</code> alone explains the data and the effective data multipliers are
+unidentifiable: the optimiser is free to move them anywhere. It duly did, reporting
+<code>e_ifd = 1.19e18</code>. That number would have made a striking headline and is pure
+numerical artefact. Our implementation detects this condition and refuses to
+report the multipliers, the budget table, or the crossover budgets derived from
+them.</p>
+<p>The cause is Section 5.2. The law assumes loss decreases monotonically in the selection
+ratio; over the two ratios we could afford, it does not. With only 5% and 10%
+available, and with the 10% points sitting <em>above</em> the 5% points for four of five
+methods, there is no descending curve to fit.</p>
+<p>We regard reporting this as more useful than suppressing it. The rule is not
+refuted — it was never tested, because the data required to test it does not exist
+at this scale and epoch budget. What the failure identifies is a precondition the
+proposal needs and we did not state in advance: <strong>at least three selection ratios,
+spanning a range over which held-out loss is actually monotone.</strong> A follow-up
+should either sweep more ratios or hold the number of gradient steps fixed across
+ratios so that the ratio, and not the step count, is the variable.</p>
+<p>The measured selection-cost shares in Section 5.1 require no fit and are unaffected.</p>
+<h3 id="54-rq1-learning-rate-robustness">5.4 RQ1 — learning-rate robustness</h3>
+<p><strong>Table 3.</strong> Held-out loss per method and learning rate (ratio 5%, seed 0).
+Rankings in parentheses (1 = best / lowest loss).</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>lr = 1e-6</th>
+<th>lr = 2e-5</th>
+<th>lr = 2e-4</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Random</td>
+<td>1.8777 (3)</td>
+<td>1.7795 (2)</td>
+<td>1.8059 (2)</td>
+</tr>
+<tr>
+<td>Perplexity</td>
+<td><strong>1.8696 (1)</strong></td>
+<td>1.8340 (3)</td>
+<td>1.8953 (3)</td>
+</tr>
+<tr>
+<td>IFD</td>
+<td>1.8765 (2)</td>
+<td><strong>1.7792 (1)</strong></td>
+<td><strong>1.7778 (1)</strong></td>
+</tr>
+</tbody>
+</table>
+<p><img alt="Figure 3: Selection method rank stability across learning rates" src="file:///D:/Ai/efficient-genai-research/results/figures/fig2_ranking_stability.png" />
+<strong>Figure 3.</strong> Selection method rank stability across learning rates ($1\times 10^{-6}$, $2\times 10^{-4}$, $5\times 10^{-4}$). Perplexity flips from 1st place at $1\times 10^{-6}$ to last place at higher learning rates (Spearman $\rho = -0.50$), demonstrating hyperparameter fragility.</p>
+<p>As visualized in Figure 3, method orderings are highly sensitive to the target model's learning rate. The headline number is the Spearman rank correlation between the ordering induced
+by lr = 1e-6 and the ordering induced by either higher learning rate: <strong>ρ = −0.50</strong>
+in both cases (Kendall τ = −0.33). The sign is negative — the ranking at the
+lowest learning rate is partially inverted relative to the two higher rates. Under
+the Spearman &gt; 0.95 stability threshold adopted from arXiv:2512.24503, this is an
+unambiguous instability. <strong>H1 is supported.</strong></p>
+<p>The instability is driven entirely by perplexity. At lr = 1e-6, perplexity ranks
+first — it beats random by 0.0081 and IFD by 0.0069. At lr = 2e-5 and lr = 2e-4,
+it ranks last, losing to random by 0.055 and 0.089 respectively. Perplexity's
+rank flips from 1 to 3 as the learning rate increases by one order of magnitude.</p>
+<p>IFD and random, by contrast, are stable. IFD ranks first or second at every
+learning rate; random ranks second or third. The Spearman correlation between
+lr = 2e-5 and lr = 2e-4 for all three methods is <strong>ρ = 1.00</strong> — a perfect match,
+suggesting that once the learning rate is large enough to move the model
+meaningfully, the relative ordering locks in.</p>
+<p>The mechanism is consistent with the qualitative finding in Section 5.1 and Section 6.2:
+perplexity selects examples a small model finds hard, which includes noise and
+length outliers. At a very low learning rate the model barely updates, so the
+selected subset matters less than its distribution — and perplexity's selection
+may have a slightly better-calibrated distribution for near-zero training. Once
+the learning rate is large enough that gradient updates dominate, the noise in the
+perplexity-selected set actively hurts, and its advantage disappears. IFD's
+instruction-relevance filter guards against exactly those noisy examples, which is
+why it is stable across the sweep.</p>
+<p><strong>One-seed caveat.</strong> The sweep ran with a single seed per cell. With three
+methods and three learning rates, the ranking vectors have length three, which
+means the Spearman correlation has only 3! = 6 possible values. The ρ = −0.50
+result is therefore a direction of evidence, not a significance test. Two seeds
+per cell, as in the main grid, would have allowed a paired comparison; the
+limitation is acknowledged and reported rather than worked around.</p>
+<h3 id="55-what-fell-inside-the-noise">5.5 What fell inside the noise</h3>
+<p><img alt="Figure 4: Held-out loss variance across random seeds" src="file:///D:/Ai/efficient-genai-research/results/figures/eda6_seed_variance.png" />
+<strong>Figure 4.</strong> Held-out loss distributions and seed-to-seed variance across selection methods. Per-condition seed spread reaches 0.028, necessitating paired example-level bootstrap testing to distinguish true signal from noise.</p>
+<p>As shown in Figure 4, seed-to-seed spread within a condition reaches 0.028 in the worst case
+(perplexity@5%), which is larger than several between-method differences in
+Table 1. The paired bootstrap over held-out examples (10,000 replicates, paired
+on shared example difficulty) separates example-level variance from method
+variance and is the appropriate test for the main grid.</p>
+<p><strong>Table 4.</strong> Paired bootstrap results vs random baseline, per condition.
+CI is 95%; p-values are two-sided. Holm-Bonferroni correction applied across
+16 comparisons (4 methods × 2 ratios × 2 seeds).</p>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Δ vs random</th>
+<th>95% CI</th>
+<th>p</th>
+<th>After correction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>perplexity@5% seed 0</td>
+<td>+0.092</td>
+<td>[+0.070, +0.113]</td>
+<td>&lt;0.001</td>
+<td><strong>significant</strong></td>
+</tr>
+<tr>
+<td>perplexity@5% seed 1</td>
+<td>+0.135</td>
+<td>[+0.115, +0.156]</td>
+<td>&lt;0.001</td>
+<td><strong>significant</strong></td>
+</tr>
+<tr>
+<td>perplexity@10% seed 0</td>
+<td>+0.049</td>
+<td>[+0.029, +0.070]</td>
+<td>&lt;0.001</td>
+<td><strong>significant</strong></td>
+</tr>
+<tr>
+<td>perplexity@10% seed 1</td>
+<td>+0.065</td>
+<td>[+0.047, +0.082]</td>
+<td>&lt;0.001</td>
+<td><strong>significant</strong></td>
+</tr>
+<tr>
+<td>ifd@5% seed 0</td>
+<td>−0.031</td>
+<td>[−0.046, −0.017]</td>
+<td>&lt;0.001</td>
+<td><strong>significant</strong></td>
+</tr>
+<tr>
+<td>diversity@5% seed 1</td>
+<td>+0.012</td>
+<td>[+0.001, +0.022]</td>
+<td>0.024</td>
+<td>inside noise</td>
+</tr>
+<tr>
+<td>learning_percentage@5% seed 1</td>
+<td>+0.018</td>
+<td>[+0.003, +0.037]</td>
+<td>0.009</td>
+<td>inside noise</td>
+</tr>
+<tr>
+<td>learning_percentage@10% seed 1</td>
+<td>+0.013</td>
+<td>[+0.001, +0.028]</td>
+<td>0.041</td>
+<td>inside noise</td>
+</tr>
+<tr>
+<td>ifd@5% seed 1</td>
+<td>−0.006</td>
+<td>[−0.017, +0.004]</td>
+<td>0.261</td>
+<td>inside noise</td>
+</tr>
+<tr>
+<td>diversity@5% seed 0</td>
+<td>−0.007</td>
+<td>[−0.017, +0.002]</td>
+<td>0.132</td>
+<td>inside noise</td>
+</tr>
+<tr>
+<td>ifd@10% seed 0</td>
+<td>−0.015</td>
+<td>[−0.027, −0.003]</td>
+<td>0.017</td>
+<td>inside noise</td>
+</tr>
+<tr>
+<td>ifd@10% seed 1</td>
+<td>+0.004</td>
+<td>[−0.005, +0.015]</td>
+<td>0.381</td>
+<td>inside noise</td>
+</tr>
+<tr>
+<td>diversity@10% seed 0</td>
+<td>+0.007</td>
+<td>[−0.005, +0.018]</td>
+<td>0.260</td>
+<td>inside noise</td>
+</tr>
+<tr>
+<td>diversity@10% seed 1</td>
+<td>+0.010</td>
+<td>[−0.000, +0.020]</td>
+<td>0.055</td>
+<td>inside noise</td>
+</tr>
+<tr>
+<td>learning_percentage@5% seed 0</td>
+<td>+0.007</td>
+<td>[−0.006, +0.023]</td>
+<td>0.361</td>
+<td>inside noise</td>
+</tr>
+<tr>
+<td>learning_percentage@10% seed 0</td>
+<td>+0.005</td>
+<td>[−0.007, +0.018]</td>
+<td>0.392</td>
+<td>inside noise</td>
+</tr>
+</tbody>
+</table>
+<p>Five comparisons survive Holm-Bonferroni: all four perplexity conditions (both
+ratios, both seeds) and ifd@5% seed 0. The perplexity results are the wrong sign
+— perplexity is detectably <em>worse</em> than random, not better. The single IFD result
+that survives correction (Δ = −0.031, p &lt; 0.001) is at seed 0 only; seed 1's IFD
+advantage (−0.006) is inside noise.</p>
+<p>Every other comparison — all diversity conditions, all learning_percentage
+conditions, IFD at 10%, and IFD at 5% seed 1 — falls inside noise after
+correction. <strong>The only method with a statistically defensible advantage over
+random, after multiplicity correction, is IFD at 5% in one of two seeds.</strong></p>
+<p><strong>ARC-Easy accuracy is flat across every condition</strong> (0.593–0.643, no consistent
+ordering). Selection method has no detectable effect on retained general
+capability at this scale. We report this as a null result: the methods differ in
+what they teach the model about Dolly's response style, not in what they cost it
+elsewhere.</p>
+<hr />
+<h2 id="6-ablations-and-analysis">6. Ablations and Analysis</h2>
+<p><img alt="Figure 6: Candidate pool score distributions" src="file:///D:/Ai/efficient-genai-research/results/figures/eda2_score_distributions.png" />
+<strong>Figure 6.</strong> Histograms of selected candidate pool positions for each selection method across the 14,000 candidate pool.</p>
+<p>Figure 6 illustrates how each selection method samples from different parts of the score distribution across the 14,000 candidate pool.</p>
+<h3 id="61-do-these-methods-select-the-same-data">6.1 Do these methods select the same data?</h3>
+<p>Selection methods are usually compared on downstream quality alone, which leaves
+open a prior question: do they even disagree? We measure Jaccard overlap between
+the 700 examples each method selects at 5%. Two independent draws of 700 from
+14,000 overlap at 0.0256 by chance.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>random</th>
+<th>perplexity</th>
+<th>diversity</th>
+<th>ifd</th>
+<th>learn %</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>random</strong></td>
+<td>—</td>
+<td>0.030</td>
+<td>0.026</td>
+<td>0.023</td>
+<td>0.027</td>
+</tr>
+<tr>
+<td><strong>perplexity</strong></td>
+<td>0.030</td>
+<td>—</td>
+<td>0.021</td>
+<td><strong>0.107</strong></td>
+<td>0.020</td>
+</tr>
+<tr>
+<td><strong>diversity</strong></td>
+<td>0.026</td>
+<td>0.021</td>
+<td>—</td>
+<td>0.028</td>
+<td>0.027</td>
+</tr>
+<tr>
+<td><strong>ifd</strong></td>
+<td>0.023</td>
+<td><strong>0.107</strong></td>
+<td>0.028</td>
+<td>—</td>
+<td><strong>0.306</strong></td>
+</tr>
+<tr>
+<td><strong>learning %</strong></td>
+<td>0.027</td>
+<td>0.020</td>
+<td>0.027</td>
+<td><strong>0.306</strong></td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="Figure 7: Pairwise Jaccard overlap heatmap" src="file:///D:/Ai/efficient-genai-research/results/figures/eda3_selection_overlap.png" />
+<strong>Figure 7.</strong> Pairwise Jaccard similarity heatmap between sets of 700 examples selected at 5% ratio. Most method pairs show near-random overlap (~0.025), except IFD and learning percentage which overlap at 0.306 (12× chance).</p>
+<p>As visualized in the heatmap in Figure 7, almost every pair sits at chance. Methods that are all described as identifying
+"difficult" or "informative" examples are, with two exceptions, selecting
+essentially disjoint subsets of the pool. Whatever they measure, it is not a shared
+underlying quantity.</p>
+<p>The two exceptions are informative. <strong>IFD and learning percentage overlap at 0.306
+— twelve times chance</strong> — despite one being training-free and the other requiring a
+full proxy epoch. If a training-free signal recovers a third of what an
+epoch-of-training signal finds, the case for paying 83.6% of total compute for the
+latter weakens considerably. <strong>Perplexity and IFD overlap at 0.107</strong>, four times
+chance, which is unsurprising: they share a scorer and IFD's numerator is the
+conditional perplexity.</p>
+<h3 id="62-what-perplexity-actually-selected">6.2 What perplexity actually selected</h3>
+<p>Perplexity was the worst method by a wide margin (+0.113 against random, Section 5.1).
+Inspecting its selections explains why, and the explanation is not subtle.</p>
+<p><img alt="Figure 8: Response length bias comparison" src="file:///D:/Ai/efficient-genai-research/results/figures/eda4_length_bias.png" />
+<strong>Figure 8.</strong> Response length distribution comparison between perplexity selections, random selections, and the full candidate pool. Perplexity overwhelmingly selects short, one-token responses (median 18 characters vs 187 characters in pool).</p>
+<p>As illustrated in Figure 8, selecting the examples a small model finds <em>hardest</em> overwhelmingly selects
+<strong>examples with very short responses</strong>:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>mean response length</th>
+<th>median</th>
+<th>≤20 chars</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>whole pool</td>
+<td>359</td>
+<td>187</td>
+<td><strong>6%</strong></td>
+</tr>
+<tr>
+<td>perplexity</td>
+<td><strong>51</strong></td>
+<td><strong>18</strong></td>
+<td><strong>55%</strong></td>
+</tr>
+<tr>
+<td>ifd</td>
+<td>611</td>
+<td>124</td>
+<td>23%</td>
+</tr>
+<tr>
+<td>random</td>
+<td>351</td>
+<td>183</td>
+<td>6%</td>
+</tr>
+<tr>
+<td>diversity</td>
+<td>368</td>
+<td>171</td>
+<td>6%</td>
+</tr>
+<tr>
+<td>learning %</td>
+<td>401</td>
+<td>204</td>
+<td>6%</td>
+</tr>
+</tbody>
+</table>
+<p>Perplexity's median selected response is <strong>18 characters</strong>. A sample of what that
+means in practice:</p>
+<table>
+<thead>
+<tr>
+<th>instruction</th>
+<th>selected response</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>In what key do most car horns honk?</td>
+<td><code>F</code></td>
+</tr>
+<tr>
+<td>How many books are there in the Harry Potter series?</td>
+<td><code>7</code></td>
+</tr>
+<tr>
+<td>How many member states does the European Union have?</td>
+<td><code>27</code></td>
+</tr>
+<tr>
+<td>how many limbs are in yoga</td>
+<td><code>8</code></td>
+</tr>
+</tbody>
+</table>
+<p>The mechanism is now clear. A short response offers few tokens over which to
+amortise the model's uncertainty, so mean per-token NLL is high almost by
+construction. "Select the highest-perplexity examples" therefore reduces, on this
+pool, to "select the one-token factoid answers" — a <strong>9× enrichment</strong> of ≤20-character
+responses relative to the pool. Fine-tuning on that teaches the model to answer
+tersely, which mismatches a held-out distribution whose median response is 187
+characters, and the held-out loss duly rises.</p>
+<p>This is worth stating plainly because it is a property of the <em>metric</em>, not of the
+pool: response-length confounding will afflict any length-normalised perplexity
+criterion applied to a corpus with mixed response lengths. A practitioner adopting
+perplexity selection should either length-stratify or normalise for it.</p>
+<p>IFD is partially protected by construction. Its ratio of conditional to
+unconditional perplexity cancels much of the length effect, and its selections show
+23% short responses rather than 55%. It is also the only method that beat random.
+That is a coherent story — but with two seeds it is a hypothesis this study
+suggests rather than establishes.</p>
+<h3 id="63-the-cost-class-question-restated">6.3 The cost-class question, restated</h3>
+<p>Combining Section 5.1 and Section 6.1: the training-based method costs 83.6% of total compute,
+scores worse than random, and shares 31% of its selections with a training-free
+method costing 59%. Nothing in these results identifies what the proxy epoch buys.
+That is a negative result about a specific method at a specific scale, not a
+general claim — but it is the result, and the accounting that produced it is the
+paper's contribution.</p>
+<hr />
+<h2 id="7-limitations">7. Limitations</h2>
+<p>The limitations below are ordered by how much they constrain the conclusions.</p>
+<p><strong>A single pool and a single target scale.</strong> All results come from
+databricks-dolly-15k adapted onto Qwen2.5-0.5B. Dolly is small, human-written,
+and stylistically narrow; larger and noisier pools are exactly where selection
+should matter most. Nothing here establishes that the observed behaviour holds at
+7B or beyond, and the proxy-selection literature reports its strongest effects at
+13B. The cost argument changes shape with scale: selection cost is roughly fixed
+in the pool size while training cost grows with the target, so a method that does
+not repay itself at 0.5B may repay itself at 13B. Our crossover budgets should be
+read as a method for asking the question, not as universal constants.</p>
+<p><strong>LoRA, not full fine-tuning, and not QLoRA.</strong> Adaptation is low-rank throughout.
+Full fine-tuning has a different sample-efficiency profile, and a selection method
+that helps a rank-16 adapter need not help a full update. We dropped 4-bit
+quantization deliberately — at 0.5B it is unnecessary, and it is a confound —
+but this means our results do not speak to the QLoRA setting the original papers
+used.</p>
+<p><strong>Statistical power in the learning-rate sweep.</strong> The sweep runs one seed per
+cell. With n=1 the ranking at any single learning rate could move through seed
+noise alone, so RQ1's evidence is suggestive rather than conclusive. The paired
+bootstrap over held-out examples carries what significance we can claim; the
+seed-level variance is not estimated in that study. A stronger test needs at
+least three seeds per cell.</p>
+<p><strong>Held-out loss is not a neutral arbiter.</strong> Our primary metric is response NLL on
+held-out Dolly examples. This rewards selections that are Dolly-typical. Capability
+retention is measured only by ARC-Easy on 300 examples. IFEval, HellaSwag, and
+pairwise judgement were all planned and cut for time.</p>
+<p><strong>Analytical rather than measured FLOPs.</strong> Costs use the standard <code>2ND</code> / <code>4ND</code> /
+<code>6ND</code> approximations. Wall-clock is reported alongside and is comparable only
+within a device.</p>
+<p><strong>The scaling law's shared exponent is an assumption.</strong> Fitting a per-method
+exponent is not identifiable from two selection ratios, so the exponent is shared
+across methods. We report the fit's residuals; the fit was degenerate and the
+multipliers are not reported.</p>
+<p><strong>IFD as implemented is not Cherry-LLM's IFD.</strong> We use an off-the-shelf
+pretrained scorer rather than a briefly fine-tuned "experience" model, which moves
+the method from training-based to training-free. Our IFD numbers are not directly
+comparable to the original paper's.</p>
+<hr />
+<h2 id="8-conclusion">8. Conclusion</h2>
+<p>We asked whether the reported efficiency of instruction-tuning data selection
+survives two assumptions the literature has left untested: that the cost of
+selecting data is negligible, and that method rankings measured at one
+hyperparameter setting generalise.</p>
+<p>On the first, the answer is no. <strong>Selection consumed between 42% and 84% of total
+compute</strong> for every method that uses a model to select. It is the dominant term, not
+a footnote, and pricing it in removes perplexity from the quality/compute Pareto
+frontier. The strongest method in the source literature — learning percentage, which
+requires a full proxy training epoch — spent <strong>83.6% of all FLOPs deciding what to
+train on and then scored worse than choosing 700 examples uniformly at random.</strong> At
+this scale, on this pool, its selection step did not pay for itself.</p>
+<p>Two further results were not anticipated. <strong>More selected data made models worse</strong>:
+four of five methods scored worse at 10% than at 5% under a fixed epoch budget,
+because doubling the data doubles the gradient steps. And <strong>methods described in
+similar terms select almost disjoint data</strong> — pairwise overlap sits at chance for
+most pairs, and perplexity's criterion turns out to select one-token factoid
+answers at nine times their rate in the pool, which fully accounts for its poor
+performance.</p>
+<p>Our proposed contribution, a budget-aware selection rule summarising each method by
+an effective data multiplier, <strong>could not be tested</strong>. The scaling law it rests on
+requires held-out loss to fall monotonically with the selection ratio, and over the
+two ratios we could afford it does not. We report the degenerate fit rather than its
+parameters, and identify the precondition we should have stated in advance: at least
+three ratios spanning a monotone range, or a step count held fixed across ratios.</p>
+<p>On the second question, rankings are not stable: the Spearman correlation between
+the method ordering at lr = 1e-6 and either higher rate is ρ = −0.50, a partial
+inversion driven by perplexity flipping from first to last. IFD and random hold
+their positions across the sweep. With one seed per cell the result is suggestive
+rather than conclusive, but the direction is clear and consistent with the
+qualitative explanation — perplexity's noise-selecting behaviour matters more at
+learning rates large enough for gradient updates to dominate.</p>
+<p>What we can defend is narrower than we set out to show and, we think, more useful
+than another benchmark table. Efficiency claims for data selection are currently
+made against an accounting that omits their largest cost term. When that term is
+measured — on identical hardware, in hardware-independent units — the ordering
+changes, and the cheapest possible baseline becomes very hard to beat. Any future
+claim that a selection method improves efficiency should be required to state the
+budget at which it does so.</p>
+<hr />
+<h2 id="references">References</h2>
+<ul>
+<li>Smaller Language Models are capable of selecting Instruction-Tuning Training Data
+  for Larger Language Models. arXiv:2402.10430</li>
+<li>Can Small Training Runs Reliably Guide Data Curation? Rethinking Proxy-Model
+  Practice. arXiv:2512.24503 (ICLR 2026)</li>
+<li>Influence-Preserving Proxies for Gradient-Based Data Selection in LLM
+  Fine-tuning. arXiv:2602.17835</li>
+<li>LESS: Selecting Influential Data for Targeted Instruction Tuning. arXiv:2402.04333</li>
+<li>What Makes Good Data for Alignment? (DEITA). OpenReview BTKAeLqLMw</li>
+<li>The Best Instruction-Tuning Data are Those That Fit. OpenReview 4jFSekBaDT</li>
+<li>LEAD: Iterative Data Selection for Efficient LLM Instruction Tuning. arXiv:2505.07437</li>
+</ul>
+<hr />
+<h2 id="reproducibility">Reproducibility</h2>
+<p><strong>Code and data.</strong> All code, frozen split, selection artifacts, per-example loss
+vectors, and run logs are committed to the public repository. The results in this
+paper can be reproduced from the committed artifacts alone; no re-running is
+required to verify the numbers.</p>
+<p><strong>Commit.</strong> <code>8f6c2c7a3530c94b841d4f17c32923f00515422b</code></p>
+<p><strong>Split.</strong> <code>results/split.json</code>, template hash <code>cb11391ee245</code>, seed 0,
+14,000 train / 1,000 held-out from databricks-dolly-15k.</p>
+<p><strong>Compute.</strong> 29 completed training runs: 20 main grid (fast_grid study,
+5 methods × 2 ratios × 2 seeds) and 9 LR sweep (fast_lr_sweep study,
+3 methods × 3 learning rates × 1 seed). Total measured wall-clock: <strong>9.1 hours</strong>
+(4.4 h training + 4.7 h selection), on Kaggle Tesla T4 and NVIDIA RTX 3070.</p>
+<p><strong>Exact commands to reproduce from scratch:</strong></p>
+<pre><code class="language-bash"># 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Verify environment (32 checks, no GPU needed)
+python scripts/smoke_test.py
+
+# 3. Frozen split (already committed — only needed once on a fresh clone)
+python scripts/make_split.py
+
+# 4. Selection artifacts (CPU; cached after first run)
+for m in random perplexity diversity ifd; do
+  python scripts/run_selection.py --method $m --ratio 0.05 0.1 --seed 0 1
+done
+# learning_percentage requires GPU:
+python scripts/run_selection.py --method learning_percentage --ratio 0.05 0.1 --seed 0 1 --device cuda
+
+# 5. Training (GPU required)
+python src/runner.py --config configs/fast_grid.yaml
+python src/runner.py --config configs/fast_lr_sweep.yaml
+
+# 6. Analysis and figures
+python scripts/analyze.py --all
+python scripts/figures.py
+
+# All numbers in the paper are produced by steps 6.
+# Selection artifacts and run logs are already committed;
+# steps 4 and 5 can be skipped to reproduce analysis only.
+</code></pre>
+</body>
+</html>

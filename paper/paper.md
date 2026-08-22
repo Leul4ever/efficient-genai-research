@@ -262,6 +262,13 @@ arXiv:2512.24503 so that our result is directly comparable to theirs.
 
 ## 4. Experimental Setup
 
+
+![Figure 5: Dataset overview for databricks-dolly-15k](../results/figures/eda1_dataset_overview.png)
+**Figure 5.** Dataset overview for databricks-dolly-15k showing instruction word count distribution, response word count distribution, and category composition across the candidate pool.
+
+
+As shown in Figure 5, the Dolly dataset pool contains 15,011 instruction-response pairs with diverse category distributions and a wide spread of response lengths.
+
 **Pool and split.** databricks-dolly-15k (15,011 examples), split once with seed 0
 into 14,000 training candidates and 1,000 held-out examples. The split is frozen
 and committed; the prompt template is hashed (`cb11391ee245`) into the split file,
@@ -314,7 +321,7 @@ zero are named explicitly as inside noise rather than omitted. Across the main
 grid we apply Holm-Bonferroni correction.
 
 **Hardware.** Kaggle Tesla T4 (15 GB) and NVIDIA RTX 3070 (8 GB). Selection and
-training run on GPU; the laptop-CPU figures reported in §3.2 are a separate
+training run on GPU; the laptop-CPU figures reported in Section 3.2 are a separate
 device-comparison measurement and are not mixed into the cost tables.
 
 ---
@@ -356,7 +363,15 @@ because MiniLM is two orders of magnitude smaller than the scorers.
 This is not a rounding error to be relegated to a footnote. It is the dominant
 term. An efficiency claim that omits it is not measuring efficiency.
 
-The consequence for the Pareto frontier is direct. Scored on **training compute
+
+![Figure 1: Pareto frontier comparison](../results/figures/fig1_pareto.png)
+**Figure 1.** Pareto frontier of held-out loss against training compute alone (left panel, as accounted in prior literature) versus total compute including selection FLOPs (right panel, true net cost). Scored on total compute, perplexity@5% leaves the Pareto frontier entirely because its selection cost outweighs its downstream benefit.
+
+![Figure 2: Stacked compute breakdown](../results/figures/eda5_cost_breakdown.png)
+**Figure 2.** Stacked compute breakdown showing selection FLOPs versus training FLOPs across selection methods. Model-based methods consume 58.9% to 83.6% of total FLOPs during the selection phase before training begins.
+
+
+As illustrated in Figure 2, the selection overhead dominates the overall compute budget for model-based selectors. The consequence for the Pareto frontier is direct, as demonstrated in Figure 1. Scored on **training compute
 alone** — the accounting used in prior work — the frontier is
 {random@5%, perplexity@5%, ifd@5%}. Scored on **total compute**, perplexity@5%
 leaves the frontier entirely: it is dominated, because the FLOPs it spent scoring
@@ -375,12 +390,12 @@ random.
 worse than random — an order of magnitude larger than any other gap in the table,
 and roughly four times the largest observed seed spread (0.0279). Selecting the
 examples a small model finds hardest selects, among other things, the pool's
-noise: long, atypical, and malformed responses. The qualitative inspection in §6
+noise: long, atypical, and malformed responses. The qualitative inspection in Section 6
 bears this out.
 
 **Only IFD beats random**, by 0.0164 at 5%, and it pays 58.9% of total compute for
 that margin. Whether that trade is worth making is exactly the question the
-budget-aware rule in §3.3 is designed to answer, and §5.3 reports what happened
+budget-aware rule in Section 3.3 is designed to answer, and Section 5.3 reports what happened
 when we tried to answer it.
 
 ### 5.2 More selected data made models worse
@@ -398,11 +413,11 @@ get away with" has the sign of this effect backwards over this range.
 
 This has a methodological consequence we did not anticipate and report rather than
 work around: it **breaks the monotonicity assumption** that the data-scaling law in
-§3.3 depends on.
+Section 3.3 depends on.
 
 ### 5.3 RQ4 — the budget-aware rule did not fit
 
-We attempted to fit the scaling law of §3.3 to the grid. **The fit is degenerate
+We attempted to fit the scaling law of Section 3.3 to the grid. **The fit is degenerate
 and we do not report its parameters.**
 
 The fitted amplitude collapsed to 7.9e-04, below the residual RMSE of 8.9e-03.
@@ -414,7 +429,7 @@ numerical artefact. Our implementation detects this condition and refuses to
 report the multipliers, the budget table, or the crossover budgets derived from
 them.
 
-The cause is §5.2. The law assumes loss decreases monotonically in the selection
+The cause is Section 5.2. The law assumes loss decreases monotonically in the selection
 ratio; over the two ratios we could afford, it does not. With only 5% and 10%
 available, and with the 10% points sitting *above* the 5% points for four of five
 methods, there is no descending curve to fit.
@@ -427,7 +442,7 @@ spanning a range over which held-out loss is actually monotone.** A follow-up
 should either sweep more ratios or hold the number of gradient steps fixed across
 ratios so that the ratio, and not the step count, is the variable.
 
-The measured selection-cost shares in §5.1 require no fit and are unaffected.
+The measured selection-cost shares in Section 5.1 require no fit and are unaffected.
 
 ### 5.4 RQ1 — learning-rate robustness
 
@@ -440,7 +455,12 @@ Rankings in parentheses (1 = best / lowest loss).
 | Perplexity | **1.8696 (1)** | 1.8340 (3) | 1.8953 (3) |
 | IFD | 1.8765 (2) | **1.7792 (1)** | **1.7778 (1)** |
 
-The headline number is the Spearman rank correlation between the ordering induced
+
+![Figure 3: Selection method rank stability across learning rates](../results/figures/fig2_ranking_stability.png)
+**Figure 3.** Selection method rank stability across learning rates ($1\times 10^{-6}$, $2\times 10^{-4}$, $5\times 10^{-4}$). Perplexity flips from 1st place at $1\times 10^{-6}$ to last place at higher learning rates (Spearman $\rho = -0.50$), demonstrating hyperparameter fragility.
+
+
+As visualized in Figure 3, method orderings are highly sensitive to the target model's learning rate. The headline number is the Spearman rank correlation between the ordering induced
 by lr = 1e-6 and the ordering induced by either higher learning rate: **ρ = −0.50**
 in both cases (Kendall τ = −0.33). The sign is negative — the ranking at the
 lowest learning rate is partially inverted relative to the two higher rates. Under
@@ -458,7 +478,7 @@ lr = 2e-5 and lr = 2e-4 for all three methods is **ρ = 1.00** — a perfect mat
 suggesting that once the learning rate is large enough to move the model
 meaningfully, the relative ordering locks in.
 
-The mechanism is consistent with the qualitative finding in §5.1 and §6.2:
+The mechanism is consistent with the qualitative finding in Section 5.1 and Section 6.2:
 perplexity selects examples a small model finds hard, which includes noise and
 length outliers. At a very low learning rate the model barely updates, so the
 selected subset matters less than its distribution — and perplexity's selection
@@ -477,7 +497,12 @@ limitation is acknowledged and reported rather than worked around.
 
 ### 5.5 What fell inside the noise
 
-Seed-to-seed spread within a condition reaches 0.028 in the worst case
+
+![Figure 4: Held-out loss variance across random seeds](../results/figures/eda6_seed_variance.png)
+**Figure 4.** Held-out loss distributions and seed-to-seed variance across selection methods. Per-condition seed spread reaches 0.028, necessitating paired example-level bootstrap testing to distinguish true signal from noise.
+
+
+As shown in Figure 4, seed-to-seed spread within a condition reaches 0.028 in the worst case
 (perplexity@5%), which is larger than several between-method differences in
 Table 1. The paired bootstrap over held-out examples (10,000 replicates, paired
 on shared example difficulty) separates example-level variance from method
@@ -527,6 +552,12 @@ elsewhere.
 
 ## 6. Ablations and Analysis
 
+
+![Figure 6: Candidate pool score distributions](../results/figures/eda2_score_distributions.png)
+**Figure 6.** Histograms of selected candidate pool positions for each selection method across the 14,000 candidate pool.
+
+Figure 6 illustrates how each selection method samples from different parts of the score distribution across the 14,000 candidate pool.
+
 ### 6.1 Do these methods select the same data?
 
 Selection methods are usually compared on downstream quality alone, which leaves
@@ -542,7 +573,12 @@ the 700 examples each method selects at 5%. Two independent draws of 700 from
 | **ifd** | 0.023 | **0.107** | 0.028 | — | **0.306** |
 | **learning %** | 0.027 | 0.020 | 0.027 | **0.306** | — |
 
-Almost every pair sits at chance. Methods that are all described as identifying
+
+![Figure 7: Pairwise Jaccard overlap heatmap](../results/figures/eda3_selection_overlap.png)
+**Figure 7.** Pairwise Jaccard similarity heatmap between sets of 700 examples selected at 5% ratio. Most method pairs show near-random overlap (~0.025), except IFD and learning percentage which overlap at 0.306 (12× chance).
+
+
+As visualized in the heatmap in Figure 7, almost every pair sits at chance. Methods that are all described as identifying
 "difficult" or "informative" examples are, with two exceptions, selecting
 essentially disjoint subsets of the pool. Whatever they measure, it is not a shared
 underlying quantity.
@@ -557,10 +593,15 @@ conditional perplexity.
 
 ### 6.2 What perplexity actually selected
 
-Perplexity was the worst method by a wide margin (+0.113 against random, §5.1).
+Perplexity was the worst method by a wide margin (+0.113 against random, Section 5.1).
 Inspecting its selections explains why, and the explanation is not subtle.
 
-Selecting the examples a small model finds *hardest* overwhelmingly selects
+
+![Figure 8: Response length bias comparison](../results/figures/eda4_length_bias.png)
+**Figure 8.** Response length distribution comparison between perplexity selections, random selections, and the full candidate pool. Perplexity overwhelmingly selects short, one-token responses (median 18 characters vs 187 characters in pool).
+
+
+As illustrated in Figure 8, selecting the examples a small model finds *hardest* overwhelmingly selects
 **examples with very short responses**:
 
 | | mean response length | median | ≤20 chars |
@@ -603,7 +644,7 @@ suggests rather than establishes.
 
 ### 6.3 The cost-class question, restated
 
-Combining §5.1 and §6.1: the training-based method costs 83.6% of total compute,
+Combining Section 5.1 and Section 6.1: the training-based method costs 83.6% of total compute,
 scores worse than random, and shares 31% of its selections with a training-free
 method costing 59%. Nothing in these results identifies what the proxy epoch buys.
 That is a negative result about a specific method at a specific scale, not a
