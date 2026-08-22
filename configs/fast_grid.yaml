@@ -1,8 +1,8 @@
 # FAST TRACK -- 24-hour scope. Replaces study1_main_grid.
 #
-# 5 methods x 2 ratios x 2 seeds = 20 runs.
-# Dropped vs the full plan: hybrid (a variant, least load-bearing), the third
-# seed, the pairwise judge, and IFEval/HellaSwag.
+# 5 methods x 2 ratios x 3 seeds = 30 runs.
+# Dropped vs the full plan: hybrid (a variant, least load-bearing),
+# the pairwise judge, and IFEval/HellaSwag.
 # KEPT: learning_percentage. It is the only training-based method, and without
 # it the cost-class contrast that RQ2 and RQ4 rest on collapses entirely.
 #
@@ -49,3 +49,4 @@ grid:
   seed:
   - 0
   - 1
+  - 2
