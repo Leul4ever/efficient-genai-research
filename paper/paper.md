@@ -2,6 +2,14 @@
 
 *Robustness and net-cost accounting for efficient instruction tuning.*
 
+**Author:** Research Team (Efficient GenAI)
+
+---
+
+## Abstract
+
+Data selection methods for instruction tuning report matching or exceeding full-corpus performance using only a small fraction of candidate data. However, existing efficiency claims rely on two untested assumptions: (1) that the computational overhead of selecting data is negligible, and (2) that selection method rankings remain stable across target model hyperparameters. In this paper, we conduct a rigorous measurement and robustness audit of proxy-based data selection. First, we price selection compute into the net efficiency ledger using analytical FLOPs and wall-clock accounting. We show that model-based selection algorithms consume between **42.0% and 83.6% of total compute** during selection alone, causing methods like perplexity to fall off the total-compute Pareto frontier. Second, we test selection ranking stability across learning rates ($1\times 10^{-6}$ to $2\times 10^{-4}$); we observe significant rank instability (Spearman $\rho = -0.50$), demonstrating that fixed-hyperparameter benchmarks produce fragile method orderings. Finally, an empirical audit reveals how un-audited selection pipelines can fail silently due to FP16 numerical overflow or inverted filter logic, defaulting to trivial low-index corpus fallbacks while producing plausible metrics. We provide an open-source, reproducible suite and advocate for budget-aware, audited accounting in data selection research.
+
 ---
 
 ## 1. Introduction
@@ -215,9 +223,7 @@ with the budget. We make this explicit.
 **Quality.** We model held-out loss with a data-scaling law in which each method
 is summarised by one scalar, its **effective data multiplier** `e_m`:
 
-```
-L(m, r) = L_inf + A · (e_m · r)^(-α),     e_random := 1
-```
+$$L(m, r) = L_{\infty} + A \cdot (e_m \cdot r)^{-\alpha}, \quad e_{\text{random}} := 1$$
 
 A method selecting fraction `r` behaves like random selection at fraction
 `e_m · r`. So `e_ifd = 2.4` means "IFD's 5% is worth 10% of randomly chosen
@@ -238,10 +244,7 @@ whichever method happened to supply it.
 **The rule.** Loss decreases monotonically in `r`, so the best ratio for a method
 is the largest it can still afford after paying its own selection cost:
 
-```
-r*(m) = clip((B - C_sel(m)) / c_train, 0, 1)
-choose  argmin_m  L(m, r*(m))
-```
+$$r^*(m) = \text{clip}\left(\frac{B - C_{\text{sel}}(m)}{c_{\text{train}}}, 0, 1\right), \quad m^* = \arg\min_m L(m, r^*(m))$$
 
 Closed-form, no search. It captures a real tension: an expensive method must have
 a multiplier high enough to repay the training budget its selection step consumed.
@@ -290,7 +293,7 @@ interacts with quantization error.
 **Selection ratios.** 5% (700 examples) and 10% (1,400), against a full-data
 ceiling. Two seeds per condition.
 
-**Measured selection costs** (Tesla T4, 14,000 examples):
+**Table 2.** Measured selection costs (Tesla T4, 14,000 examples).
 
 | Method | Wall-clock | FLOPs | Class |
 |---|---|---|---|
@@ -583,6 +586,8 @@ open a prior question: do they even disagree? We measure Jaccard overlap between
 the 700 examples each method selects at 5%. Two independent draws of 700 from
 14,000 overlap at 0.0256 by chance.
 
+**Table 5.** Pairwise Jaccard similarity matrix between 700 selected examples at 5% ratio.
+
 | | random | perplexity | diversity | ifd | learn % |
 |---|---|---|---|---|---|
 | **random** | — | 0.030 | 0.026 | 0.023 | 0.027 |
@@ -621,6 +626,8 @@ Inspecting its selections explains why, and the explanation is not subtle.
 
 As illustrated in Figure 8, selecting the examples a small model finds *hardest* overwhelmingly selects
 **examples with very short responses**:
+
+**Table 6.** Response length distributions (words and characters) across selection methods.
 
 | | mean response length | median | ≤20 chars |
 |---|---|---|---|
