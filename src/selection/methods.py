@@ -110,14 +110,14 @@ class IFDSelector(ScoreSelector):
             ifd = np.exp(cond - uncond)
         n_filtered = 0
         if self.filter_below_one:
-            keep = np.isfinite(ifd) & (ifd >= 1.0)
+            keep = np.isfinite(ifd) & (ifd < 1.0)
             n_filtered = int(len(ifd) - keep.sum())
-            ifd = np.where(keep, ifd, -np.inf)  # drop the "instruction helped" cases
+            ifd = np.where(keep, ifd, -np.inf)  # keep cases where instruction helped (ifd < 1.0)
         cost.notes = {
             "scorer": self.scorer,
             "tokens_processed": tok_c + tok_u,
             "passes": 2,
-            "n_dropped_ifd_lt_1": n_filtered,
+            "n_dropped_ifd_ge_1": n_filtered,
             "deviation": "pretrained scorer, not Cherry-LLM brief-experience model",
         }
         return ifd, cost
@@ -284,6 +284,7 @@ class LearningPercentageSelector(ScoreSelector):
         order = np.random.RandomState(0).permutation(len(texts))
         total_tokens = 0
 
+        scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == "cuda"))
         for _ in range(self.epochs):
             for start in range(0, len(order), self.batch_size):
                 batch = [texts[i] for i in order[start : start + self.batch_size]]
@@ -293,9 +294,13 @@ class LearningPercentageSelector(ScoreSelector):
                 ).to(self.device)
                 labels = enc["input_ids"].clone()
                 labels[enc["attention_mask"] == 0] = -100
-                loss = model(**enc, labels=labels).loss
-                loss.backward()
-                opt.step()
+                with torch.amp.autocast(device_type=self.device.type, dtype=torch.float16, enabled=(self.device.type == "cuda")):
+                    loss = model(**enc, labels=labels).loss
+                if torch.isnan(loss) or torch.isinf(loss):
+                    continue
+                scaler.scale(loss).backward()
+                scaler.step(opt)
+                scaler.update()
                 opt.zero_grad(set_to_none=True)
                 total_tokens += int(enc["attention_mask"].sum())
 

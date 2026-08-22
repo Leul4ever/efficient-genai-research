@@ -63,6 +63,11 @@ class ScoreSelector(Selector):
         if len(scores) != len(examples):
             raise ValueError(f"{self.name}: got {len(scores)} scores for {len(examples)} examples")
         finite = np.isfinite(scores)
+        if finite.sum() < k:
+            raise ValueError(
+                f"{self.name}: only {finite.sum()} finite scores available for budget k={k}. "
+                f"Refusing to silent-fallback to index ordering."
+            )
         if not finite.all():
             # Non-finite scores are a real failure mode (empty responses, overflow).
             # Push them to the losing end rather than letting argsort place them arbitrarily.

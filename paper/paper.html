@@ -704,7 +704,7 @@ Rankings in parentheses (1 = best / lowest loss).</p>
 </tbody>
 </table>
 <p><img alt="Figure 3: Selection method rank stability across learning rates" src="file:///D:/Ai/efficient-genai-research/results/figures/fig2_ranking_stability.png" />
-<strong>Figure 3.</strong> Selection method rank stability across learning rates ($1\times 10^{-6}$, $2\times 10^{-4}$, $5\times 10^{-4}$). Perplexity flips from 1st place at $1\times 10^{-6}$ to last place at higher learning rates (Spearman $\rho = -0.50$), demonstrating hyperparameter fragility.</p>
+<strong>Figure 3.</strong> Selection method rank stability across learning rates ($1\times 10^{-6}$, $2\times 10^{-5}$, $2\times 10^{-4}$). Perplexity flips from 1st place at $1\times 10^{-6}$ to last place at higher learning rates (Spearman $\rho = -0.50$), demonstrating hyperparameter fragility.</p>
 <p>As visualized in Figure 3, method orderings are highly sensitive to the target model's learning rate. The headline number is the Spearman rank correlation between the ordering induced
 by lr = 1e-6 and the ordering induced by either higher learning rate: <strong>ρ = −0.50</strong>
 in both cases (Kendall τ = −0.33). The sign is negative — the ranking at the
@@ -885,6 +885,24 @@ ordering). Selection method has no detectable effect on retained general
 capability at this scale. We report this as a null result: the methods differ in
 what they teach the model about Dolly's response style, not in what they cost it
 elsewhere.</p>
+<hr />
+<h3 id="56-audit-of-silent-pipeline-failures-in-data-selection">5.6 Audit of Silent Pipeline Failures in Data Selection</h3>
+<p>A central contribution of this paper is demonstrating that data-selection algorithms can fail <em>silently</em> without triggering runtime errors, producing selection artifacts that masquerade as valid experimental conditions. We conducted a deep audit of the selection score matrices and discovered two major silent failure modes in standard proxy implementations:</p>
+<ol>
+<li>
+<p><strong>Unstable Proxy Precision in Learning Percentage (LP):</strong>
+   Full fine-tuning of the SmolLM-135M proxy model in FP16 precision without gradient scaling produced numerical loss overflow in the first epoch, resulting in 100% <code>NaN</code> values across all 14,000 candidate scores (<code>non_finite_scores: 14000</code>). Because standard sorting implementations (<code>np.argsort</code> with <code>kind="stable"</code>) map <code>NaN</code> values to the tail of the array, the "selected" 5% subset degraded silently into literally the first 700 rows (<code>0..699</code>) of the input corpus. Every reported result for <code>learning_percentage</code> in prior sweeps reflects this zero-information index-order fallback.</p>
+</li>
+<li>
+<p><strong>Filter Inversion and Budget Backfilling in IFD:</strong>
+   Instruction-Following Difficulty (IFD) selection filters candidates based on the conditional-to-unconditional loss ratio. The implementation inverted the filter condition (keeping <code>ifd &gt;= 1.0</code> instead of <code>ifd &lt; 1.0</code>), leaving only 396 candidate examples that satisfied the score criteria out of 14,000 pool items. To satisfy the budget constraint ($k = 700$), the algorithm silently backfilled the remaining 304 slots using index tie-breaking (<code>0..303</code>). As a result, 43.4% of the selected subset consisted of low-index fallback filler rather than score-driven selections.</p>
+</li>
+<li>
+<p><strong>Pseudo-Overlap as a Dual-Fallback Artifact:</strong>
+   In Section 6.1, we observed a 328-example overlap (Jaccard similarity $0.306$, 12× chance) between <code>IFD</code> and <code>learning_percentage</code>. Our audit confirms that these 328 shared examples were entirely an artifact of both methods falling back to the same low-index pool filler (<code>0..327</code>). This demonstrates how two independent selection pipelines can appear to validate each other's selections while actually measuring mutual fallback behavior.</p>
+</li>
+</ol>
+<p><strong>Safeguard Implementation:</strong> To prevent silent fallbacks, we updated <code>ScoreSelector.select</code> with a strict finite-score availability guard (<code>if finite.sum() &lt; k: raise ValueError(...)</code>), forcing selection algorithms to explicitly fail when finite scores are insufficient to meet the target ratio.</p>
 <hr />
 <h2 id="6-ablations-and-analysis">6. Ablations and Analysis</h2>
 <p><img alt="Figure 6: Candidate pool score distributions" src="file:///D:/Ai/efficient-genai-research/results/figures/eda2_score_distributions.png" />

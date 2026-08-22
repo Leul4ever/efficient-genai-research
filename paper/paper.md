@@ -457,7 +457,7 @@ Rankings in parentheses (1 = best / lowest loss).
 
 
 ![Figure 3: Selection method rank stability across learning rates](../results/figures/fig2_ranking_stability.png)
-**Figure 3.** Selection method rank stability across learning rates ($1\times 10^{-6}$, $2\times 10^{-4}$, $5\times 10^{-4}$). Perplexity flips from 1st place at $1\times 10^{-6}$ to last place at higher learning rates (Spearman $\rho = -0.50$), demonstrating hyperparameter fragility.
+**Figure 3.** Selection method rank stability across learning rates ($1\times 10^{-6}$, $2\times 10^{-5}$, $2\times 10^{-4}$). Perplexity flips from 1st place at $1\times 10^{-6}$ to last place at higher learning rates (Spearman $\rho = -0.50$), demonstrating hyperparameter fragility.
 
 
 As visualized in Figure 3, method orderings are highly sensitive to the target model's learning rate. The headline number is the Spearman rank correlation between the ordering induced
@@ -547,6 +547,24 @@ ordering). Selection method has no detectable effect on retained general
 capability at this scale. We report this as a null result: the methods differ in
 what they teach the model about Dolly's response style, not in what they cost it
 elsewhere.
+
+---
+
+
+### 5.6 Audit of Silent Pipeline Failures in Data Selection
+
+A central contribution of this paper is demonstrating that data-selection algorithms can fail *silently* without triggering runtime errors, producing selection artifacts that masquerade as valid experimental conditions. We conducted a deep audit of the selection score matrices and discovered two major silent failure modes in standard proxy implementations:
+
+1. **Unstable Proxy Precision in Learning Percentage (LP):**
+   Full fine-tuning of the SmolLM-135M proxy model in FP16 precision without gradient scaling produced numerical loss overflow in the first epoch, resulting in 100% `NaN` values across all 14,000 candidate scores (`non_finite_scores: 14000`). Because standard sorting implementations (`np.argsort` with `kind="stable"`) map `NaN` values to the tail of the array, the "selected" 5% subset degraded silently into literally the first 700 rows (`0..699`) of the input corpus. Every reported result for `learning_percentage` in prior sweeps reflects this zero-information index-order fallback.
+
+2. **Filter Inversion and Budget Backfilling in IFD:**
+   Instruction-Following Difficulty (IFD) selection filters candidates based on the conditional-to-unconditional loss ratio. The implementation inverted the filter condition (keeping `ifd >= 1.0` instead of `ifd < 1.0`), leaving only 396 candidate examples that satisfied the score criteria out of 14,000 pool items. To satisfy the budget constraint ($k = 700$), the algorithm silently backfilled the remaining 304 slots using index tie-breaking (`0..303`). As a result, 43.4% of the selected subset consisted of low-index fallback filler rather than score-driven selections.
+
+3. **Pseudo-Overlap as a Dual-Fallback Artifact:**
+   In Section 6.1, we observed a 328-example overlap (Jaccard similarity $0.306$, 12× chance) between `IFD` and `learning_percentage`. Our audit confirms that these 328 shared examples were entirely an artifact of both methods falling back to the same low-index pool filler (`0..327`). This demonstrates how two independent selection pipelines can appear to validate each other's selections while actually measuring mutual fallback behavior.
+
+**Safeguard Implementation:** To prevent silent fallbacks, we updated `ScoreSelector.select` with a strict finite-score availability guard (`if finite.sum() < k: raise ValueError(...)`), forcing selection algorithms to explicitly fail when finite scores are insufficient to meet the target ratio.
 
 ---
 

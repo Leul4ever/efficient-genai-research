@@ -184,6 +184,7 @@ cmd = [
     edge_path,
     "--headless",
     "--disable-gpu",
+    "--no-pdf-header-footer",
     f"--print-to-pdf={pdf_out_path}",
     html_out_path.as_uri()
 ]
