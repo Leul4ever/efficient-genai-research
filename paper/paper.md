@@ -2,7 +2,7 @@
 
 *Robustness and net-cost accounting for efficient instruction tuning.*
 
-**Author:** Research Team (Efficient GenAI)
+**Author:** Leul Abera
 
 ---
 
